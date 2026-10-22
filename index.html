@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)" />
+    <title>Tarefas</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icone.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icone-192.png" />
+    <link rel="stylesheet" href="./css/app.css" />
+  </head>
+  <body>
+    <div id="faixa-local" class="faixa" hidden>modo local — sem sincronizar</div>
+
+    <section id="tela-login" class="tela-centro" hidden>
+      <h1 class="marca">Tarefas</h1>
+      <form id="form-email" class="entrar" autocomplete="on">
+        <label for="email" class="suave">Seu e-mail</label>
+        <input
+          id="email"
+          class="entrada"
+          type="email"
+          name="email"
+          inputmode="email"
+          autocomplete="email"
+          placeholder="voce@exemplo.com"
+          required
+        />
+        <button id="btn-enviar-codigo" class="botao botao-principal" type="submit">
+          Enviar código
+        </button>
+      </form>
+      <form id="form-codigo" class="entrar" autocomplete="on" hidden>
+        <p id="codigo-enviado" class="suave texto-login"></p>
+        <label for="codigo" class="suave">Código</label>
+        <input
+          id="codigo"
+          class="entrada entrada-codigo"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="10"
+          pattern="[0-9]{6,10}"
+          placeholder="000000"
+          aria-label="Código do e-mail"
+        />
+        <button id="btn-entrar-codigo" class="botao botao-principal" type="submit">
+          Entrar
+        </button>
+        <div class="login-links">
+          <button id="btn-reenviar" class="botao botao-discreto" type="button">
+            Reenviar código
+          </button>
+          <button id="btn-trocar-email" class="botao botao-discreto" type="button">
+            Trocar e-mail
+          </button>
+        </div>
+      </form>
+      <p id="login-status" class="login-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="tela-sem-acesso" class="tela-centro" hidden>
+      <h1 class="marca">Tarefas</h1>
+      <p>Esta conta não tem acesso.</p>
+      <p id="email-sem-acesso" class="suave"></p>
+      <button id="btn-sair-sem-acesso" class="botao" type="button">Sair</button>
+    </section>
+
+    <div id="tela-app" hidden>
+      <header class="topo">
+        <div class="topo-linha">
+          <p id="data-hoje" class="data-hoje"></p>
+          <div class="topo-acoes">
+            <button id="btn-busca" class="icone" type="button" aria-label="Buscar"></button>
+            <button id="btn-ajustes" class="icone" type="button" aria-label="Ajustes"></button>
+          </div>
+        </div>
+        <nav id="areas" class="areas" aria-label="Áreas"></nav>
+        <div id="busca-caixa" class="busca" hidden>
+          <input
+            id="busca"
+            type="search"
+            placeholder="Buscar"
+            aria-label="Buscar tarefas"
+            autocomplete="off"
+          />
+        </div>
+      </header>
+
+      <main class="conteudo">
+        <form id="form-criar" class="criar" autocomplete="off">
+          <div class="criar-campo">
+            <input
+              id="nova-tarefa"
+              type="text"
+              placeholder="Nova tarefa"
+              aria-label="Nova tarefa"
+              maxlength="1000"
+              enterkeyhint="done"
+            />
+            <button class="criar-botao" type="submit" aria-label="Criar tarefa">+</button>
+          </div>
+          <div id="previa" class="previa" aria-live="polite" hidden></div>
+        </form>
+
+        <div id="lista" class="lista"></div>
+        <p id="vazio" class="vazio" hidden>Nada para hoje.</p>
+      </main>
+    </div>
+
+    <div id="detalhes-fundo" class="fundo" hidden></div>
+    <aside id="detalhes" class="painel painel-detalhes" aria-label="Detalhes da tarefa" hidden></aside>
+
+    <div id="menu-fundo" class="fundo" hidden></div>
+    <div id="menu" class="menu" role="menu" hidden></div>
+
+    <div id="ajustes-fundo" class="fundo" hidden></div>
+    <aside id="ajustes" class="painel painel-ajustes" aria-label="Ajustes" hidden></aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-texto"></span>
+      <button id="toast-acao" class="toast-acao" type="button" hidden>Desfazer</button>
+    </div>
+
+    <script src="./vendor/supabase.js"></script>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
