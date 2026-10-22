@@ -665,8 +665,8 @@ async function enviarCodigo(reenvio = false) {
 async function entrarComCodigo() {
   const email = el.email.value.trim();
   const token = el.codigo.value.replace(/\s+/g, '');
-  if (!/^\d{6}$/.test(token)) {
-    definirStatusLogin('Digite os 6 dígitos do código.');
+  if (!/^\d{6,10}$/.test(token)) {
+    definirStatusLogin('Digite o código que chegou no e-mail.');
     el.codigo.focus();
     return;
   }

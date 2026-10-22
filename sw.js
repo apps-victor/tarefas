@@ -4,7 +4,7 @@
 // - requisições ao Supabase e URLs com ?code= nunca são cacheadas
 
 // Ao publicar mudanças nos arquivos, suba a versão (v8, v9…).
-const VERSAO = 'v8';
+const VERSAO = '799dbee';
 const CACHE = `tarefas-${VERSAO}`;
 
 const ESTATICOS = [
