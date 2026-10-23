@@ -46,6 +46,11 @@ const CAMINHOS = {
     ['path', { d: 'M19 5l-7 7' }],
     ['path', { d: 'M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5' }],
   ],
+  notas: [
+    ['path', { d: 'M5 7h14' }],
+    ['path', { d: 'M5 12h14' }],
+    ['path', { d: 'M5 17h9' }],
+  ],
 };
 
 export function icone(nome, { tamanho = 20 } = {}) {

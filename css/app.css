@@ -158,6 +158,22 @@ a {
   padding: 4px 12px;
 }
 
+/* ------------------------------------------------------------ abertura */
+
+.tela-carregando {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--papel);
+}
+
+.tela-carregando .marca {
+  margin: 0;
+  opacity: 0.72;
+}
+
 /* ------------------------------------------------------------ entrada */
 
 .tela-centro {
@@ -663,6 +679,109 @@ body.arrastando .faixa.vazia .faixa-vazia {
 
 .detalhe-link {
   text-decoration: none;
+}
+
+/* Espiar notas e passos sem abrir o painel. */
+.espiar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 26px;
+  margin: -4px 0 -4px -4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--tinta);
+  font-size: 12.5px;
+  line-height: 1;
+}
+
+.espiar:hover,
+.espiar[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--tinta) 11%, transparent);
+}
+
+.espiar-conta {
+  font-variant-numeric: tabular-nums;
+}
+
+.espiada {
+  padding: 0 0 12px 56px;
+  border-bottom: 1px solid var(--pauta);
+  font-size: 14px;
+  color: var(--grafite);
+}
+
+.espiada-notas {
+  max-height: calc(12 * 1.5em);
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.espiada-notas a {
+  color: var(--tinta);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.espiada-ver,
+.espiada-abrir {
+  display: inline-block;
+  min-height: 30px;
+  padding: 4px 0;
+  color: var(--lapis);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.espiada-ver:hover,
+.espiada-abrir:hover {
+  color: var(--tinta);
+}
+
+.espiada-passos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.espiada-passo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.espiada-check {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  flex: 0 0 18px;
+  accent-color: var(--tinta);
+  cursor: pointer;
+}
+
+.espiada-passo-texto {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.espiada-passo.feita .espiada-passo-texto {
+  color: var(--lapis-claro);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+/* Enquanto a linha é arrastada, a espiada dela não acompanha o clone. */
+body.arrastando .linha.origem-arrasto + .espiada {
+  display: none;
 }
 
 .ponto-ia {
@@ -1303,8 +1422,10 @@ body.arrastando {
 }
 
 .entrada-notas {
-  min-height: 96px;
-  resize: vertical;
+  min-height: 86px;
+  max-height: 60vh;
+  resize: none;
+  overflow-y: hidden;
   font-size: 15px;
   line-height: 1.5;
 }
@@ -1350,6 +1471,17 @@ body.arrastando {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--lapis);
+}
+
+.secao-conta {
+  margin-left: 8px;
+  font-family: var(--serifa);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lapis-claro);
 }
 
 .subtarefas {

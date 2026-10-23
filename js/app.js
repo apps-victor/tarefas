@@ -73,6 +73,7 @@ function mensagem(e) {
 
 const el = {
   faixaLocal: document.getElementById('faixa-local'),
+  telaCarregando: document.getElementById('tela-carregando'),
   telaLogin: document.getElementById('tela-login'),
   telaSemAcesso: document.getElementById('tela-sem-acesso'),
   telaApp: document.getElementById('tela-app'),
@@ -654,6 +655,8 @@ const lista = criarLista({
   aoMenu: abrirMenu,
   aoMover: moverTarefa,
   aoNovaNaFaixa: (faixa, caixa) => nova.abrir({ faixa, caixa }),
+  aoSubMarcar: (tarefaId, subId, feita) =>
+    comSub(tarefaId, () => dados.subMarcar(subId, feita)),
 });
 
 const nova = criarNova({
@@ -947,6 +950,7 @@ async function entrarComCodigo() {
 }
 
 function mostrarTela(nome) {
+  el.telaCarregando.hidden = true;
   el.telaLogin.hidden = nome !== 'login';
   el.telaSemAcesso.hidden = nome !== 'sem-acesso';
   el.telaApp.hidden = nome !== 'app';
@@ -1034,6 +1038,17 @@ async function iniciar() {
     mostrarTela('app');
     await recarregar();
   } else {
+    // Com dono, papel e tarefas no cache, o app aparece antes da rede. A sessão
+    // é confirmada logo depois; se não existir mais, cai no login como hoje.
+    const rapida = dados.partidaRapida();
+    if (rapida) {
+      estado.autenticado = true;
+      estado.membro = rapida.membro || 'dono';
+      estado.tarefas = rapida.tarefas || [];
+      mostrarTela('app');
+      renderAreas();
+      renderTudo();
+    }
     try {
       const resultado = await dados.iniciar();
       await aplicarSessao(resultado);

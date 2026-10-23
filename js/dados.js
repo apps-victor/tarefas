@@ -29,6 +29,21 @@ const LIMITE_LISTA = 500;
 // Feitas mais antigas que isso não vêm do servidor (a tela de Feitas mostra este período).
 const DIAS_FEITAS = 45;
 const LIMITE_NOTA = 20000;
+// Sem resposta nesse tempo, a RPC é tratada como falha de rede e o cache fica.
+const LIMITE_RPC = 8000;
+
+/** Corre uma promessa com limite; ao estourar, rejeita como erro de rede. */
+function comLimite(promessa, ms) {
+  let timer = null;
+  const estouro = new Promise((_, falhar) => {
+    timer = setTimeout(() => {
+      const e = erro('rede', 'Tempo esgotado');
+      e.rede = true;
+      falhar(e);
+    }, ms);
+  });
+  return Promise.race([promessa, estouro]).finally(() => clearTimeout(timer));
+}
 
 function validarNota(area, texto) {
   if (!AREAS.includes(area)) throw erro('invalido:area');
@@ -979,8 +994,13 @@ export class RepositorioSupabase {
     this.timerSync = null;
     this.timerRetentativa = null;
     this._persistenciaPedida = false;
+    this._iniciando = true;
+    this._verificandoMembro = null;
 
     this.cliente.auth.onAuthStateChange((evento, sessao) => {
+      // A partida inteira é tratada por iniciar(). O INITIAL_SESSION (e o
+      // SIGNED_IN de recuperação da sessão salva) repetiria o trabalho.
+      if (evento === 'INITIAL_SESSION' || this._iniciando) return;
       if (evento === 'SIGNED_OUT' && !sessao) {
         // Pode ser só uma falha de refresh: tenta ler a sessão uma vez.
         setTimeout(async () => {
@@ -996,6 +1016,7 @@ export class RepositorioSupabase {
           }
           this.sessao = null;
           this.membro = null;
+          this.arm.removeItem(CHAVE_MEMBRO);
           this.fila = [];
           this._salvarFila();
           this._removerCanal();
@@ -1008,10 +1029,12 @@ export class RepositorioSupabase {
       setTimeout(async () => {
         if (sessao) {
           this._ajustarDono(sessao);
-          try {
-            await this._verificarMembro();
-          } catch {
-            // mantém o último papel conhecido
+          if (!this.membro) {
+            try {
+              await this._verificarMembro();
+            } catch {
+              // mantém o último papel conhecido
+            }
           }
           this._assinarRealtime();
           this.processarFila();
@@ -1036,50 +1059,75 @@ export class RepositorioSupabase {
   // ---------------------------------------------------------------- sessão
 
   async iniciar() {
-    if (
-      !this._persistenciaPedida &&
-      typeof navigator !== 'undefined' &&
-      navigator.storage &&
-      typeof navigator.storage.persist === 'function'
-    ) {
-      this._persistenciaPedida = true;
-      try {
-        await navigator.storage.persist();
-      } catch {
-        // sem persistência; segue
-      }
-    }
-
-    let sessao = null;
+    this._iniciando = true;
     try {
-      const { data } = await this.cliente.auth.getSession();
-      sessao = (data && data.session) || null;
-    } catch {
-      sessao = null;
-    }
-    if (!sessao) {
-      // "Falha de refresh / SIGNED_OUT inesperado: tentar getSession() uma vez
-      // antes de mostrar a tela de login."
+      if (
+        !this._persistenciaPedida &&
+        typeof navigator !== 'undefined' &&
+        navigator.storage &&
+        typeof navigator.storage.persist === 'function'
+      ) {
+        this._persistenciaPedida = true;
+        try {
+          await navigator.storage.persist();
+        } catch {
+          // sem persistência; segue
+        }
+      }
+
+      let sessao = null;
       try {
         const { data } = await this.cliente.auth.getSession();
         sessao = (data && data.session) || null;
       } catch {
         sessao = null;
       }
-    }
-    this.sessao = sessao;
-    if (sessao) {
-      this._ajustarDono(sessao);
-      try {
-        await this._verificarMembro();
-      } catch {
-        // offline: usa o último papel conhecido
+      if (!sessao) {
+        // "Falha de refresh / SIGNED_OUT inesperado: tentar getSession() uma vez
+        // antes de mostrar a tela de login."
+        try {
+          const { data } = await this.cliente.auth.getSession();
+          sessao = (data && data.session) || null;
+        } catch {
+          sessao = null;
+        }
       }
-      this._assinarRealtime();
-      this.processarFila();
-      this._limparUrlAuth();
+      this.sessao = sessao;
+      if (!sessao) this.membro = null;
+      if (sessao) {
+        this._ajustarDono(sessao);
+        const papelSalvo = this.arm.getItem(CHAVE_MEMBRO);
+        if (papelSalvo) {
+          // Já sabemos o papel: mostra o app e confirma em segundo plano.
+          this.membro = papelSalvo;
+          this._verificarMembroAoFundo();
+        } else {
+          try {
+            await this._verificarMembro();
+          } catch {
+            // offline: usa o último papel conhecido
+          }
+        }
+        this._assinarRealtime();
+        this.processarFila();
+        this._limparUrlAuth();
+      }
+      return { autenticado: Boolean(sessao), membro: this.membro };
+    } finally {
+      this._iniciando = false;
     }
-    return { autenticado: Boolean(sessao), membro: this.membro };
+  }
+
+  /** Partida pelo cache: dono, papel e tarefas já no aparelho. */
+  partidaRapida() {
+    const dono = this.arm.getItem(CHAVE_DONO);
+    const membro = this.arm.getItem(CHAVE_MEMBRO);
+    if (!dono || !membro) return null;
+    const tarefas = lerJSON(this.arm, CHAVE_CACHE, null);
+    if (!Array.isArray(tarefas)) return null;
+    this.tarefas = tarefas;
+    this.membro = membro;
+    return { tarefas: clone(tarefas), membro };
   }
 
   _ajustarDono(sessao) {
@@ -1087,12 +1135,14 @@ export class RepositorioSupabase {
     if (!uid) return;
     const anterior = this.arm.getItem(CHAVE_DONO);
     if (anterior && anterior !== uid) {
-      // Outra conta no mesmo navegador: não mistura cache, fila nem notas.
+      // Outra conta no mesmo navegador: não mistura cache, fila, notas nem papel.
       this.tarefas = [];
       this.fila = [];
+      this.membro = null;
       this._salvarCache();
       this._salvarFila();
       this.arm.removeItem(CHAVE_NOTAS);
+      this.arm.removeItem(CHAVE_MEMBRO);
     }
     this.arm.setItem(CHAVE_DONO, uid);
   }
@@ -1155,6 +1205,7 @@ export class RepositorioSupabase {
     }
     this.sessao = null;
     this.membro = null;
+    this.arm.removeItem(CHAVE_MEMBRO);
     this.fila = [];
     this._salvarFila();
     this._removerCanal();
@@ -1190,20 +1241,41 @@ export class RepositorioSupabase {
     }
   }
 
-  async _verificarMembro() {
-    try {
-      const papel = await this._rpc('tf_sou_membro');
-      this.membro = papel || null;
-      if (papel) this.arm.setItem(CHAVE_MEMBRO, String(papel));
-      else this.arm.removeItem(CHAVE_MEMBRO);
-    } catch (e) {
-      if (e && e.rede) {
-        const ultimo = this.arm.getItem(CHAVE_MEMBRO);
-        this.membro = ultimo || null;
-        return;
+  _verificarMembro() {
+    if (this._verificandoMembro) return this._verificandoMembro;
+    this._verificandoMembro = (async () => {
+      try {
+        const papel = await this._rpc('tf_sou_membro', undefined, {
+          limite: LIMITE_RPC,
+        });
+        this.membro = papel || null;
+        if (papel) this.arm.setItem(CHAVE_MEMBRO, String(papel));
+        else this.arm.removeItem(CHAVE_MEMBRO);
+      } catch (e) {
+        if (e && e.rede) {
+          const ultimo = this.arm.getItem(CHAVE_MEMBRO);
+          this.membro = ultimo || null;
+          return;
+        }
+        this.membro = null;
+        this.arm.removeItem(CHAVE_MEMBRO);
       }
-      this.membro = null;
-    }
+    })().finally(() => {
+      this._verificandoMembro = null;
+    });
+    return this._verificandoMembro;
+  }
+
+  /** Confirma o papel sem segurar a abertura; avisa se ele mudou. */
+  _verificarMembroAoFundo() {
+    const antes = this.membro;
+    this._verificarMembro()
+      .then(() => {
+        if (this.membro !== antes) this._notificarSessao('membro');
+      })
+      .catch(() => {
+        // sem rede: fica o papel do cache
+      });
   }
 
   _limparUrlAuth() {
@@ -1218,11 +1290,14 @@ export class RepositorioSupabase {
 
   // ------------------------------------------------------------------ RPC
 
-  async _rpc(nome, argumentos) {
+  async _rpc(nome, argumentos, { limite = 0 } = {}) {
     try {
-      const { data, error } = await this.cliente.rpc(nome, argumentos);
-      if (error) throw error;
-      return data;
+      const chamada = (async () => {
+        const { data, error } = await this.cliente.rpc(nome, argumentos);
+        if (error) throw error;
+        return data;
+      })();
+      return limite ? await comLimite(chamada, limite) : await chamada;
     } catch (e) {
       throw traduzirErro(e);
     }
@@ -1274,7 +1349,9 @@ export class RepositorioSupabase {
     }
     try {
       const lista = normalizarLista(
-        await this._rpc('tf_listar', { p: this._filtroLista() }),
+        await this._rpc('tf_listar', { p: this._filtroLista() }, {
+          limite: LIMITE_RPC,
+        }),
       );
       if (!this.fila.length) {
         this.tarefas = lista;

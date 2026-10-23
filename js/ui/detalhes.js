@@ -7,6 +7,7 @@ import {
   ROTULOS_FAIXA,
   diaSemana,
   hojeSP,
+  progresso,
 } from '../logica.js';
 import {
   h,
@@ -245,15 +246,26 @@ export function criarDetalhes({
     return entrada;
   }
 
+  // Cresce com o texto até ~60% da tela; depois disso, a própria caixa rola.
+  function ajustarAlturaNotas(area) {
+    if (!area) return;
+    const limite = Math.max(96, Math.round(window.innerHeight * 0.6));
+    area.style.height = 'auto';
+    const conteudo = area.scrollHeight;
+    area.style.height = `${Math.min(conteudo, limite)}px`;
+    area.style.overflowY = conteudo > limite ? 'auto' : 'hidden';
+  }
+
   function campoNotas(tarefa) {
     const area = h('textarea', {
       class: 'entrada entrada-notas',
-      rows: '4',
+      rows: '3',
       maxlength: '5000',
       placeholder: 'Notas',
       'aria-label': 'Notas',
     });
     area.value = tarefa.notas || '';
+    area.addEventListener('input', () => ajustarAlturaNotas(area));
     area.addEventListener('change', () => {
       const valor = area.value;
       if (valor === (tarefa.notas || '')) return;
@@ -580,6 +592,15 @@ export function criarDetalhes({
     if (!tarefaAtual) return;
     const tarefa = tarefaAtual;
     const rolagem = painel.scrollTop;
+    // O foco no campo de novo passo é devolvido depois que o painel é recriado.
+    const focoAntes = document.activeElement;
+    const focoNosPassos = Boolean(
+      focoAntes &&
+        painel.contains(focoAntes) &&
+        focoAntes.closest &&
+        focoAntes.closest('.sub-form') &&
+        focoAntes.matches('input'),
+    );
     limpar(painel);
 
     const cabecalho = h('div', { class: 'painel-cabecalho' });
@@ -597,6 +618,20 @@ export function criarDetalhes({
     painel.dataset.caixa = tarefa.area || 'pessoal';
     painel.appendChild(campoTitulo(tarefa));
     painel.appendChild(campoNotas(tarefa));
+
+    const passos = progresso(tarefa.subtarefas);
+    const tituloPassos = h('h3', { class: 'secao-titulo' });
+    tituloPassos.appendChild(h('span', { text: 'Passos' }));
+    if (passos.total > 0) {
+      tituloPassos.appendChild(
+        h('span', {
+          class: 'secao-conta',
+          text: `${passos.feitas} de ${passos.total}`,
+        }),
+      );
+    }
+    painel.appendChild(tituloPassos);
+    painel.appendChild(blocoSubtarefas(tarefa));
 
     painel.appendChild(
       h('div', { class: 'campo' }, [
@@ -641,11 +676,6 @@ export function criarDetalhes({
         campoLink(tarefa),
       ]),
     );
-
-    painel.appendChild(
-      h('h3', { class: 'secao-titulo', text: 'Passos' }),
-    );
-    painel.appendChild(blocoSubtarefas(tarefa));
 
     const acoes = h('div', { class: 'acoes-painel' });
     if (tarefa.estado === 'feita' || tarefa.estado === 'arquivada') {
@@ -705,6 +735,17 @@ export function criarDetalhes({
     );
 
     painel.scrollTop = rolagem;
+    ajustarAlturaNotas(painel.querySelector('.entrada-notas'));
+    if (focoNosPassos) {
+      const campoNovoPasso = painel.querySelector('.sub-form .entrada');
+      if (campoNovoPasso) {
+        try {
+          campoNovoPasso.focus({ preventScroll: true });
+        } catch {
+          campoNovoPasso.focus();
+        }
+      }
+    }
   }
 
   function abrir(tarefa) {
@@ -727,6 +768,8 @@ export function criarDetalhes({
     render();
     painel.hidden = false;
     fundo.hidden = false;
+    // Agora visível: mede o texto de verdade para crescer até 60% da tela.
+    ajustarAlturaNotas(painel.querySelector('.entrada-notas'));
     if (!soltarVoltar) {
       soltarVoltar = comVoltar(() => {
         soltarVoltar = null;

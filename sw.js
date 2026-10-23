@@ -1,10 +1,13 @@
 // Service worker do PWA Caderno.
-// - index.html/raiz: network-first (para o callback do login por link nunca ficar velho)
+// - index.html/raiz: network-first, com limite de 2,5 s; passou disso, serve o
+//   cache e deixa a resposta da rede atualizá-lo quando chegar.
 // - js/css/ícones: cache-first
-// - requisições ao Supabase e URLs com ?code= nunca são cacheadas
+// - requisições ao Supabase e URLs com ?code= ou ?error= nunca são cacheadas
+// - o login é por e-mail + código (OTP), não por link
 
 // Ao publicar mudanças nos arquivos, suba a versão (v8, v9…).
-const VERSAO = '327263f';
+const VERSAO = '6fd63b7';
+const LIMITE_REDE = 2500;
 const CACHE = `tarefas-${VERSAO}`;
 
 const ESTATICOS = [
@@ -85,18 +88,34 @@ async function cacheFirst(requisicao) {
   }
 }
 
-async function networkFirst(requisicao) {
+async function networkFirst(requisicao, evento) {
   const cache = await caches.open(CACHE);
-  try {
-    const resposta = await fetch(requisicao);
+  const daRede = fetch(requisicao).then((resposta) => {
     if (resposta && resposta.ok) cache.put(requisicao, resposta.clone());
     return resposta;
+  });
+  let timer = null;
+  const limite = new Promise((ok) => {
+    timer = setTimeout(() => ok(null), LIMITE_REDE);
+  });
+  const resposta = await Promise.race([daRede.catch(() => null), limite]);
+  clearTimeout(timer);
+  if (resposta) return resposta;
+
+  const guardado =
+    (await cache.match(requisicao)) ||
+    (await cache.match('./index.html')) ||
+    (await cache.match('./'));
+  // Sem limite: a rede continua e atualiza o cache para a próxima abertura.
+  if (evento && typeof evento.waitUntil === 'function') {
+    evento.waitUntil(daRede.then(() => {}).catch(() => {}));
+  }
+  if (guardado) return guardado;
+  // Primeira visita sem cache: ainda vale esperar a rede.
+  try {
+    return await daRede;
   } catch {
-    const guardado =
-      (await cache.match(requisicao)) ||
-      (await cache.match('./index.html')) ||
-      (await cache.match('./'));
-    return guardado || Response.error();
+    return Response.error();
   }
 }
 
@@ -111,7 +130,7 @@ self.addEventListener('fetch', (evento) => {
     (requisicao.headers.get('accept') || '').includes('text/html');
 
   evento.respondWith(
-    navegacao ? networkFirst(requisicao) : cacheFirst(requisicao),
+    navegacao ? networkFirst(requisicao, evento) : cacheFirst(requisicao),
   );
 });
 

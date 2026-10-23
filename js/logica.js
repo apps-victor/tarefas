@@ -530,6 +530,45 @@ export function dominio(link) {
   }
 }
 
+/**
+ * Divide um texto em pedaços de texto e links http(s), para montar a espiada
+ * das notas sem innerHTML. A pontuação final (`.`, `,`, `)`) fica como texto,
+ * fora do link. Texto vazio ou nulo devolve [].
+ */
+export function partesComLinks(texto) {
+  if (texto == null || texto === '') return [];
+  const fonte = String(texto);
+  const saida = [];
+  const juntarTexto = (valor) => {
+    if (!valor) return;
+    const ultimo = saida[saida.length - 1];
+    if (ultimo && ultimo.tipo === 'texto') ultimo.valor += valor;
+    else saida.push({ tipo: 'texto', valor });
+  };
+  const link = /https?:\/\/[^\s<>"]+/g;
+  let ultimo = 0;
+  let achado = link.exec(fonte);
+  while (achado) {
+    let valor = achado[0];
+    let pontuacao = '';
+    while (/[.,)]$/.test(valor)) {
+      pontuacao = valor.slice(-1) + pontuacao;
+      valor = valor.slice(0, -1);
+    }
+    if (achado.index > ultimo) {
+      juntarTexto(fonte.slice(ultimo, achado.index));
+    }
+    if (valor) saida.push({ tipo: 'link', valor });
+    juntarTexto(pontuacao);
+    ultimo = achado.index + achado[0].length;
+    achado = link.exec(fonte);
+  }
+  if (ultimo < fonte.length) {
+    juntarTexto(fonte.slice(ultimo));
+  }
+  return saida;
+}
+
 /** Texto sem acento e minúsculo, para busca. */
 export function semAcento(texto) {
   if (texto == null) return '';

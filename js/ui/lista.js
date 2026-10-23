@@ -6,6 +6,7 @@ import {
   faixaDe,
   formatarHora,
   origemExterna,
+  partesComLinks,
   progresso,
   rotuloData,
   dominio,
@@ -60,9 +61,12 @@ export function criarLista({
   aoMenu,
   aoMover,
   aoNovaNaFaixa,
+  aoSubMarcar,
 }) {
   const raiz = document.getElementById('lista');
   const recolhidas = new Set(['esperando']);
+  // Tarefas com a espiada aberta. Vive só nesta sessão e sobrevive ao redesenho.
+  const abertos = new Set();
   let comDataAberta = false;
   let ultimo = null;
   let pendente = null;
@@ -141,6 +145,91 @@ export function criarLista({
 
   // ----------------------------------------------------------------- linha
 
+  function temEspiada(tarefa) {
+    if (!tarefa) return false;
+    const notas = typeof tarefa.notas === 'string' ? tarefa.notas.trim() : '';
+    return Boolean(notas) || progresso(tarefa.subtarefas).total > 0;
+  }
+
+  function alternarEspiada(id) {
+    if (abertos.has(id)) abertos.delete(id);
+    else abertos.add(id);
+    renderInterno();
+  }
+
+  function blocoEspiada(tarefa) {
+    const bloco = h('div', { class: 'espiada', dataset: { id: tarefa.id } });
+    const notas = typeof tarefa.notas === 'string' ? tarefa.notas : '';
+    if (notas.trim()) {
+      // Nunca innerHTML: cada pedaço vira nó de texto ou <a> seguro.
+      const texto = h('div', { class: 'espiada-notas' });
+      for (const parte of partesComLinks(notas)) {
+        if (parte.tipo === 'link') {
+          texto.appendChild(
+            h('a', {
+              href: parte.valor,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+              text: parte.valor,
+            }),
+          );
+        } else {
+          texto.appendChild(document.createTextNode(parte.valor));
+        }
+      }
+      bloco.appendChild(texto);
+      const verTudo = h('button', {
+        class: 'espiada-ver',
+        type: 'button',
+        hidden: true,
+        text: 'ver tudo',
+      });
+      verTudo.addEventListener('click', () => aoAbrir(tarefa));
+      bloco.appendChild(verTudo);
+    }
+
+    const subs = Array.isArray(tarefa.subtarefas) ? tarefa.subtarefas : [];
+    if (subs.length) {
+      const passos = h('div', { class: 'espiada-passos' });
+      for (const sub of subs) {
+        const linha = h('label', {
+          class: `espiada-passo${sub.feita === true ? ' feita' : ''}`,
+        });
+        const check = h('input', {
+          class: 'espiada-check',
+          type: 'checkbox',
+          checked: sub.feita === true,
+          'aria-label': `Feita: ${sub.texto}`,
+        });
+        check.addEventListener('change', async () => {
+          check.disabled = true;
+          try {
+            await aoSubMarcar(tarefa.id, sub.id, check.checked);
+          } catch {
+            // A lista será redesenhada; se não for, volta ao estado salvo.
+            check.checked = sub.feita === true;
+            check.disabled = false;
+          }
+        });
+        linha.appendChild(check);
+        linha.appendChild(
+          h('span', { class: 'espiada-passo-texto', text: sub.texto }),
+        );
+        passos.appendChild(linha);
+      }
+      bloco.appendChild(passos);
+    }
+
+    const abrir = h('button', {
+      class: 'espiada-abrir',
+      type: 'button',
+      text: 'abrir',
+    });
+    abrir.addEventListener('click', () => aoAbrir(tarefa));
+    bloco.appendChild(abrir);
+    return bloco;
+  }
+
   function linhaDetalhe(tarefa, contexto) {
     const detalhe = h('span', { class: 'detalhe' });
     if (contexto.caixa === 'tudo') {
@@ -173,14 +262,26 @@ export function criarLista({
       );
     }
     const sub = progresso(tarefa.subtarefas);
-    if (sub.total > 0) {
-      detalhe.appendChild(
-        h('span', {
-          class: 'detalhe-extra',
-          text: `${sub.feitas}/${sub.total}`,
-          'aria-label': `${sub.feitas} de ${sub.total} passos`,
-        }),
-      );
+    if (temEspiada(tarefa)) {
+      const aberta = abertos.has(tarefa.id);
+      const espiar = h('button', {
+        class: 'espiar',
+        type: 'button',
+        'aria-expanded': aberta ? 'true' : 'false',
+        'aria-label': 'Ver notas e passos',
+      });
+      if (sub.total > 0) {
+        espiar.appendChild(
+          h('span', { class: 'espiar-conta', text: `${sub.feitas}/${sub.total}` }),
+        );
+      } else {
+        espiar.appendChild(icone('notas', { tamanho: 16 }));
+      }
+      espiar.addEventListener('click', (evento) => {
+        evento.stopPropagation();
+        alternarEspiada(tarefa.id);
+      });
+      detalhe.appendChild(espiar);
     }
     if (tarefa.repetir) {
       detalhe.appendChild(
@@ -397,7 +498,7 @@ export function criarLista({
 
     linha.addEventListener('pointerdown', (evento) => {
       if (evento.pointerType === 'mouse' && evento.button !== 0) return;
-      if (evento.target.closest('.circulo, .menu-botao, a')) return;
+      if (evento.target.closest('.circulo, .menu-botao, .espiar, a')) return;
       if (linha.classList.contains('concluindo')) return;
       limparToque();
       const inicio = {
@@ -610,6 +711,10 @@ export function criarLista({
         const visiveis = comDataAberta ? faixa.tarefas : perto;
         for (const tarefa of visiveis) {
           lista.appendChild(criarLinha(tarefa, contexto));
+          // Irmão da linha, nunca filho: o clone do arrasto leva só a linha.
+          if (abertos.has(tarefa.id) && temEspiada(tarefa)) {
+            lista.appendChild(blocoEspiada(tarefa));
+          }
         }
         if (adiante.length) {
           const botao = h('button', {
@@ -638,6 +743,17 @@ export function criarLista({
     }
     if (buscando && !total) {
       raiz.appendChild(h('p', { class: 'vazio', text: 'Nada encontrado.' }));
+    }
+    // Notas longas ficam em ~12 linhas; o "ver tudo" só aparece se cortou.
+    for (const notas of raiz.querySelectorAll('.espiada-notas')) {
+      const verTudo = notas.nextElementSibling;
+      if (
+        verTudo &&
+        verTudo.classList.contains('espiada-ver') &&
+        notas.scrollHeight > notas.clientHeight + 2
+      ) {
+        verTudo.hidden = false;
+      }
     }
     aplicarDestaque();
   }
