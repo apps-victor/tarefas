@@ -19,7 +19,9 @@ function horaCurta(instante) {
 export function criarNotas({ aoLer, aoSalvar }) {
   const raiz = document.getElementById('notas');
   let notas = {};
+  let pedido = 0;
   const timers = new Map();
+  const campos = new Map();
 
   function ajustarAltura(campo) {
     campo.style.height = 'auto';
@@ -37,6 +39,18 @@ export function criarNotas({ aoLer, aoSalvar }) {
       status.textContent = `guardado às ${horaCurta(notas[area].atualizada_em)}`;
     } catch {
       status.textContent = 'não consegui guardar; tente de novo';
+    }
+  }
+
+  // Grava já o que estava esperando o debounce (troca de caixa, app escondido
+  // ou fechado). No modo local a escrita é síncrona; no Supabase ela entra na
+  // fila persistente antes de a página sumir.
+  function gravarPendentes() {
+    for (const [area, { campo, status }] of campos) {
+      if (!timers.has(area)) continue;
+      clearTimeout(timers.get(area));
+      timers.delete(area);
+      gravar(area, campo, status);
     }
   }
 
@@ -66,6 +80,7 @@ export function criarNotas({ aoLer, aoSalvar }) {
       timers.set(area, setTimeout(() => gravar(area, campo, status), ESPERA_GRAVAR));
     });
     campo.addEventListener('blur', () => gravar(area, campo, status));
+    campos.set(area, { campo, status });
     sec.appendChild(campo);
     sec.appendChild(status);
     requestAnimationFrame(() => ajustarAltura(campo));
@@ -73,18 +88,31 @@ export function criarNotas({ aoLer, aoSalvar }) {
   }
 
   async function mostrar(caixa) {
+    const meu = ++pedido;
+    gravarPendentes();
     limpar(raiz);
+    campos.clear();
+    let lidas = null;
     try {
-      notas = (await aoLer()) || {};
+      lidas = await aoLer();
     } catch {
       // sem rede: mostra o que houver
     }
+    // Uma troca de caixa rápida pode terminar a leitura antiga depois desta:
+    // a resposta velha é descartada para não montar a caixa errada.
+    if (meu !== pedido) return;
+    if (lidas) notas = lidas;
     limpar(raiz);
     const areas = caixa === 'tudo' ? AREAS : [caixa];
     for (const area of areas) {
       raiz.appendChild(bloco(area, { sozinho: areas.length === 1 }));
     }
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) gravarPendentes();
+  });
+  window.addEventListener('pagehide', gravarPendentes);
 
   return { mostrar };
 }

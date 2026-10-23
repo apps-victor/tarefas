@@ -55,7 +55,7 @@ function chip(texto, { ativo = false, classe = '', aoClicar } = {}) {
   return botao;
 }
 
-export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
+export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso }) {
   const painel = document.getElementById('nova');
   const fundo = document.getElementById('nova-fundo');
   let aberto = false;
@@ -65,7 +65,6 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
   // só sobrepõe enquanto estiver escrito, e some ao anotar.
   const base = { area: 'pessoal', faixa: 'proximo', quando: null, hora: null };
   const escolha = { ...base };
-  let anotadas = [];
 
   const form = h('form', { class: 'nova-form', autocomplete: 'off' });
   const topo = h('div', { class: 'nova-topo' });
@@ -88,8 +87,7 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
   const rodape = h('div', { class: 'nova-rodape' });
   const enviar = h('button', { class: 'botao-tinta', type: 'submit', text: 'Anotar' });
   rodape.appendChild(enviar);
-  const lista = h('ul', { class: 'nova-anotadas', 'aria-label': 'Anotadas agora' });
-  for (const no of [topo, titulo, previa, linhaCaixa, linhaFaixa, datas, rodape, lista]) {
+  for (const no of [topo, titulo, previa, linhaCaixa, linhaFaixa, datas, rodape]) {
     form.appendChild(no);
   }
   painel.appendChild(form);
@@ -124,7 +122,22 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
       }
       if (res.repetir) partes.push('repete');
     }
-    previa.textContent = partes.length ? `entendi: ${partes.join(' · ')}` : '';
+    const avisos = res && Array.isArray(res.avisos) ? res.avisos : [];
+    previa.textContent = '';
+    if (partes.length) {
+      previa.appendChild(
+        document.createTextNode(`entendi: ${partes.join(' · ')}`),
+      );
+    }
+    if (avisos.length) {
+      if (partes.length) previa.appendChild(document.createTextNode(' '));
+      previa.appendChild(
+        h('span', {
+          class: 'nova-aviso',
+          text: `aviso: ${avisos.join(' · ')}`,
+        }),
+      );
+    }
     desenharEscolhas();
   }
 
@@ -202,27 +215,25 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
     }
   }
 
-  function desenharAnotadas() {
-    limpar(lista);
-    for (const item of anotadas.slice(-4).reverse()) {
-      const li = h('li', { class: `tinta-${item.area}` });
-      li.appendChild(h('span', { class: 'anotada-visto', text: '✓', 'aria-hidden': 'true' }));
-      li.appendChild(h('span', { class: 'anotada-titulo', text: item.titulo }));
-      li.appendChild(h('span', { class: 'anotada-onde', text: item.onde }));
-      lista.appendChild(li);
+  function fecharPainel(depois) {
+    if (!aberto) {
+      if (typeof depois === 'function') depois();
+      return;
     }
-  }
-
-  function fecharPainel() {
-    if (!aberto) return;
     aberto = false;
+    titulo.blur();
     painel.hidden = true;
     fundo.hidden = true;
     document.body.classList.remove('folha-aberta');
+    let fim = null;
     if (soltarVoltar) {
       const soltar = soltarVoltar;
       soltarVoltar = null;
-      soltar();
+      fim = soltar();
+    }
+    if (typeof depois === 'function') {
+      if (fim && typeof fim.then === 'function') fim.then(depois);
+      else depois();
     }
   }
 
@@ -232,11 +243,9 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
     base.quando = base.faixa === 'com_data' ? obterHoje() : null;
     base.hora = null;
     Object.assign(escolha, base);
-    anotadas = [];
     titulo.value = '';
     previa.textContent = '';
     desenharEscolhas();
-    desenharAnotadas();
     aberto = true;
     painel.hidden = false;
     fundo.hidden = false;
@@ -272,18 +281,12 @@ export function criarNova({ aoCriar, obterHoje, comVoltar, aoAviso }) {
     };
     enviando = true;
     try {
-      await aoCriar(campos);
-      anotadas.push({
-        titulo: res.titulo,
-        area: escolha.area,
-        onde: `${ROTULOS_AREA[escolha.area]} · ${
-          comData ? rotuloCurto(escolha.quando) : ROTULOS_FAIXA[campos.prioridade]
-        }`,
+      const criada = await aoCriar(campos);
+      // Espera o history.back() da folha e só então rola até a tarefa, para a
+      // restauração de rolagem do navegador não desfazer o movimento.
+      fecharPainel(() => {
+        requestAnimationFrame(() => aoMostrar(criada));
       });
-      desenharAnotadas();
-      titulo.value = '';
-      aplicarParser();
-      titulo.focus();
     } catch {
       // o app já avisou
     } finally {

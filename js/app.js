@@ -112,6 +112,7 @@ const el = {
 // Botão "voltar" do Android: fecha a folha aberta em vez de sair do app.
 
 const pilhaVoltar = [];
+const fimDaVolta = [];
 let ignorarVoltar = 0;
 
 function comVoltar(fechar) {
@@ -120,21 +121,27 @@ function comVoltar(fechar) {
   try {
     history.pushState({ folha: true }, '');
   } catch {
-    return () => {};
+    return () => Promise.resolve();
   }
   pilhaVoltar.push(fechar);
+  // Devolve uma promessa que termina quando o history.back() chega ao destino,
+  // para quem fecha a folha saber quando a rolagem do navegador já foi restaurada.
   return () => {
     const i = pilhaVoltar.lastIndexOf(fechar);
-    if (i < 0) return;
+    if (i < 0) return Promise.resolve();
     pilhaVoltar.splice(i, 1);
     ignorarVoltar += 1;
+    const fim = new Promise((ok) => fimDaVolta.push(ok));
     history.back();
+    return fim;
   };
 }
 
 window.addEventListener('popstate', () => {
   if (ignorarVoltar > 0) {
     ignorarVoltar -= 1;
+    const fim = fimDaVolta.shift();
+    if (fim) fim();
     return;
   }
   const fechar = pilhaVoltar.pop();
@@ -379,13 +386,37 @@ function atual(tarefa) {
 }
 
 async function criarTarefa(campos) {
+  lista.reservar(campos.client_ref);
   try {
-    await dados.criar(campos);
+    const criada = await dados.criar(campos);
     await recarregar();
+    // No modo Supabase o id otimista pode ter virado o real durante a fila.
+    return (
+      estado.tarefas.find(
+        (t) => campos.client_ref && t.client_ref === campos.client_ref,
+      ) || criada
+    );
   } catch (e) {
+    lista.reservar(null);
     toast(mensagem(e));
     throw e;
   }
+}
+
+/** Depois de anotar: mostra a tarefa na caixa dela, rolando até ela. */
+function mostrarCriada(criada) {
+  if (!criada) return;
+  if (estado.modo !== 'tarefas') trocarModo('tarefas');
+  if (estado.busca.trim()) {
+    estado.busca = '';
+    el.busca.value = '';
+    el.buscaCaixa.hidden = true;
+    renderTudo();
+  }
+  if (estado.caixa !== 'tudo' && estado.caixa !== criada.area) {
+    trocarCaixa(criada.area);
+  }
+  lista.destacar(criada.id);
 }
 
 async function concluirTarefa(tarefa) {
@@ -417,6 +448,8 @@ async function concluirTarefa(tarefa) {
     await recarregar();
   } catch (e) {
     toast(mensagem(e));
+    // A linha já começou a sair; recarrega para ela voltar se não concluiu.
+    await recarregar();
   }
 }
 
@@ -625,6 +658,7 @@ const lista = criarLista({
 
 const nova = criarNova({
   aoCriar: criarTarefa,
+  aoMostrar: mostrarCriada,
   obterHoje: () => estado.hoje,
   comVoltar,
   aoAviso: (texto) => toast(texto),
@@ -648,7 +682,16 @@ document.addEventListener('keydown', (evento) => {
   if (evento.key !== 'n' || evento.ctrlKey || evento.metaKey || evento.altKey) return;
   const alvo = evento.target;
   if (alvo && alvo.closest && alvo.closest('input, textarea, select, [contenteditable]')) return;
-  if (el.telaApp.hidden || nova.estaAberto() || detalhes.estaAberto()) return;
+  if (
+    el.telaApp.hidden ||
+    nova.estaAberto() ||
+    detalhes.estaAberto() ||
+    ajustes.estaAberto() ||
+    !el.menu.hidden ||
+    !document.getElementById('escolher-data').hidden
+  ) {
+    return;
+  }
   evento.preventDefault();
   nova.abrir({ caixa: estado.caixa });
 });
@@ -695,10 +738,15 @@ const ajustes = criarAjustes({
   },
   aoListarIa: listarMudancasIa,
   aoDesfazerIa: async () => {
-    const quantidade = await dados.desfazerIa(24);
-    toast(quantidade > 0 ? `${quantidade} mudança(s) desfeita(s)` : 'Nada para desfazer');
-    await recarregar();
-    return quantidade;
+    try {
+      const quantidade = await dados.desfazerIa(24);
+      toast(quantidade > 0 ? `${quantidade} mudança(s) desfeita(s)` : 'Nada para desfazer');
+      await recarregar();
+      return quantidade;
+    } catch (e) {
+      toast(mensagem(e));
+      throw e;
+    }
   },
   aoExportar: () => {
     try {
@@ -715,6 +763,7 @@ const ajustes = criarAjustes({
       toast('Não foi possível exportar.');
     }
   },
+  comVoltar,
 });
 
 el.btnAjustes.addEventListener('click', () => ajustes.abrir());

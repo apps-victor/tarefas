@@ -36,6 +36,20 @@ export function limpar(no) {
   while (no.firstChild) no.removeChild(no.firstChild);
 }
 
+// Detalhes e Ajustes travam a rolagem da página. A contagem evita que fechar
+// um painel destrave a página enquanto o outro ainda está aberto.
+let paineisAbertos = 0;
+
+export function travarPainel() {
+  paineisAbertos += 1;
+  document.body.classList.add('painel-aberto');
+}
+
+export function liberarPainel() {
+  paineisAbertos = Math.max(0, paineisAbertos - 1);
+  if (!paineisAbertos) document.body.classList.remove('painel-aberto');
+}
+
 export function rotuloArea(area) {
   if (area === 'lapig') return 'LAPIG';
   if (!area) return 'Pessoal';

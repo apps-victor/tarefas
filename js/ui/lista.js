@@ -15,6 +15,8 @@ import { icone } from './icones.js';
 const NS = 'http://www.w3.org/2000/svg';
 const ESPERA_TOQUE = 380; // ms segurando para erguer a tarefa no celular
 const DURACAO_CONCLUSAO = 980; // ms até a linha sair da lista
+// Dois toques curtos: o 12 ms antigo passava despercebido em muitos Androids.
+const VIBRAR_CONCLUIR = [18, 60, 28];
 
 function pluralDias(n) {
   return n === 1 ? '1 dia' : `${n} dias`;
@@ -63,6 +65,11 @@ export function criarLista({
   let pendente = null;
   let animando = 0;
   let arrasto = null;
+  let destacarId = null;
+  // Tarefa que acabou de ser anotada: fica sem título até a escrita começar,
+  // para não aparecer pronta e depois "piscar" ao ser escrita.
+  let reservada = null;
+  let soltarReserva = null;
 
   // ------------------------------------------------------------- concluir
 
@@ -84,7 +91,8 @@ export function criarLista({
 
   function animarConclusao(linha, circulo) {
     linha.classList.add('concluindo');
-    vibrar(12);
+    // Ainda dentro do clique: o Chrome exige ativação do usuário para vibrar.
+    vibrar(VIBRAR_CONCLUIR);
     if (semMovimento()) {
       return new Promise((ok) => setTimeout(ok, 350));
     }
@@ -205,6 +213,9 @@ export function criarLista({
       role: 'listitem',
       dataset: { id: tarefa.id },
     });
+    if (reservada && (tarefa.client_ref === reservada || tarefa.id === reservada)) {
+      linha.classList.add('a-anotar');
+    }
     const buriti = String(tarefa.ref_externa || '').startsWith('cf:');
 
     const circulo = h('button', {
@@ -468,6 +479,74 @@ export function criarLista({
     return cab;
   }
 
+  function acharLinha(id) {
+    return (
+      Array.from(raiz.querySelectorAll('.linha')).find(
+        (item) => item.dataset.id === id,
+      ) || null
+    );
+  }
+
+  // A escrita começa quando a linha já está à vista, não durante a rolagem.
+  function iniciarDestaque(id, linha) {
+    const alvo = acharLinha(id) || linha;
+    reservar(null);
+    alvo.classList.add('recem-anotada');
+    alvo.classList.remove('a-anotar');
+    setTimeout(() => alvo.classList.remove('recem-anotada'), 1200);
+  }
+
+  // Tarefa recém-anotada: rola até ela e liga a animação de tinta/escrita.
+  function aplicarDestaque() {
+    if (!destacarId) return;
+    const id = destacarId;
+    const linha = acharLinha(id);
+    if (!linha) return;
+    destacarId = null;
+    const retangulo = linha.getBoundingClientRect();
+    const visivel =
+      retangulo.top >= 0 && retangulo.bottom <= window.innerHeight;
+    if (visivel || semMovimento()) {
+      if (!visivel) {
+        try {
+          linha.scrollIntoView({ block: 'center' });
+        } catch {
+          // sem rolagem
+        }
+      }
+      iniciarDestaque(id, linha);
+      return;
+    }
+    let terminou = false;
+    const comecar = () => {
+      if (terminou) return;
+      terminou = true;
+      window.removeEventListener('scrollend', comecar);
+      clearTimeout(tempo);
+      iniciarDestaque(id, linha);
+    };
+    window.addEventListener('scrollend', comecar, { once: true });
+    const tempo = setTimeout(comecar, 700);
+    try {
+      linha.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } catch {
+      comecar();
+    }
+  }
+
+  function reservar(ref) {
+    clearTimeout(soltarReserva);
+    reservada = ref || null;
+    if (!reservada) {
+      for (const item of raiz.querySelectorAll('.linha.a-anotar')) {
+        item.classList.remove('a-anotar');
+      }
+      return;
+    }
+    // Rede de segurança: se o destaque não vier, a tarefa não fica invisível.
+    soltarReserva = setTimeout(() => reservar(null), 4000);
+  }
+
   function renderInterno() {
     if (!ultimo) return;
     const { faixas, contexto } = ultimo;
@@ -504,6 +583,7 @@ export function criarLista({
     if (buscando && !total) {
       raiz.appendChild(h('p', { class: 'vazio', text: 'Nada encontrado.' }));
     }
+    aplicarDestaque();
   }
 
   function render(faixas, contexto) {
@@ -529,6 +609,11 @@ export function criarLista({
 
   return {
     render,
+    reservar,
+    destacar: (id) => {
+      destacarId = id;
+      if (!animando && !arrasto) aplicarDestaque();
+    },
     estaArrastando: () => Boolean(arrasto),
     reabrir: aoReabrir,
   };

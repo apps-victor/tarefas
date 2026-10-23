@@ -329,20 +329,7 @@ export function primeiraOcorrencia(repetir, hoje) {
 }
 
 // ---------------------------------------------------------------------------
-// Agrupamento da tela
-
-export const TITULOS_GRUPO = {
-  foco: 'Foco',
-  hoje: 'Hoje',
-  amanha: 'Amanhã',
-  semana: 'Esta semana',
-  depois: 'Depois',
-  sem_data: 'Sem data',
-  esperando: 'Esperando',
-  feitas_hoje: 'Feitas hoje',
-};
-
-export const GRUPOS_RECOLHIDOS = ['sem_data', 'esperando', 'feitas_hoje'];
+// Comparação e cópia usadas pelas faixas do caderno
 
 function compararTarefas(a, b) {
   const ha = a.hora || null;
@@ -358,105 +345,8 @@ function compararTarefas(a, b) {
   return ca < cb ? -1 : 1;
 }
 
-function domingoDaSemana(hoje) {
-  const dow = diaSemana(hoje);
-  if (dow === null) return null;
-  const falta = (7 - dow) % 7;
-  return somarDias(hoje, falta === 0 ? 7 : falta);
-}
-
 function subtarefasDe(tarefa) {
   return Array.isArray(tarefa && tarefa.subtarefas) ? tarefa.subtarefas : [];
-}
-
-/**
- * Agrupa tarefas para a tela.
- * Retorna [{ chave, titulo, tarefas }] na ordem fixa, sem grupos vazios.
- * Tarefas em `foco` recebem `atraso_dias`? Não: o atraso aparece só no grupo Hoje.
- * Tarefas em `esperando` recebem `dias` desde estado_desde.
- */
-export function agrupar(tarefas, hoje) {
-  const h = normalizarData(hoje) || hojeSP();
-  const amanha = somarDias(h, 1);
-  const domingo = domingoDaSemana(h);
-  const lista = Array.isArray(tarefas) ? tarefas : [];
-
-  const grupos = {
-    foco: [],
-    hoje: [],
-    amanha: [],
-    semana: [],
-    depois: [],
-    sem_data: [],
-    esperando: [],
-    feitas_hoje: [],
-  };
-
-  const abertas = lista.filter((t) => t && t.estado === 'aberta');
-  const usadas = new Set();
-
-  // Foco: no máximo 3 abertas com foco.
-  const comFoco = abertas.filter((t) => t.foco === true).sort(compararTarefas);
-  for (const t of comFoco.slice(0, 3)) {
-    grupos.foco.push({ ...t, subtarefas: subtarefasDe(t) });
-    usadas.add(t.id);
-  }
-
-  for (const t of abertas) {
-    if (usadas.has(t.id)) continue;
-    const tarefa = { ...t, subtarefas: subtarefasDe(t) };
-    const quando = normalizarData(t.quando);
-    if (!quando) {
-      grupos.sem_data.push(tarefa);
-    } else if (quando <= h) {
-      tarefa.atraso_dias = diferencaDias(h, quando);
-      grupos.hoje.push(tarefa);
-    } else if (quando === amanha) {
-      grupos.amanha.push(tarefa);
-    } else if (domingo && quando <= domingo) {
-      grupos.semana.push(tarefa);
-    } else {
-      grupos.depois.push(tarefa);
-    }
-  }
-
-  for (const t of lista) {
-    if (!t || t.estado !== 'esperando') continue;
-    const desde =
-      dataSP(t.estado_desde) || dataSP(t.atualizada_em) || dataSP(t.criada_em);
-    const dias = desde ? Math.max(0, diferencaDias(h, desde) || 0) : 0;
-    grupos.esperando.push({ ...t, dias, subtarefas: subtarefasDe(t) });
-  }
-
-  for (const t of lista) {
-    if (!t || t.estado !== 'feita') continue;
-    const feita = dataSP(t.feita_em);
-    if (feita === h) {
-      grupos.feitas_hoje.push({ ...t, subtarefas: subtarefasDe(t) });
-    }
-  }
-
-  const ordem = [
-    'foco',
-    'hoje',
-    'amanha',
-    'semana',
-    'depois',
-    'sem_data',
-    'esperando',
-    'feitas_hoje',
-  ];
-
-  return ordem
-    .map((chave) => {
-      grupos[chave].sort(compararTarefas);
-      return {
-        chave,
-        titulo: TITULOS_GRUPO[chave],
-        tarefas: grupos[chave],
-      };
-    })
-    .filter((g) => g.tarefas.length > 0);
 }
 
 // ---------------------------------------------------------------------------

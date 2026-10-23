@@ -1,6 +1,6 @@
 // Painel de ajustes: conta, mudanças das IAs e exportação.
 
-import { h, limpar } from './dom.js';
+import { h, liberarPainel, limpar, travarPainel } from './dom.js';
 import { icone } from './icones.js';
 
 function dataHora(instante) {
@@ -27,18 +27,27 @@ export function criarAjustes({
   aoExportar,
   obterEmail,
   modoLocal,
+  comVoltar = () => () => {},
 }) {
   const painel = document.getElementById('ajustes');
   const fundo = document.getElementById('ajustes-fundo');
   let aberto = false;
   let eventos = [];
   let carregando = false;
+  let soltarVoltar = null;
 
   function fechar() {
+    if (!aberto) return;
     aberto = false;
     painel.hidden = true;
     fundo.hidden = true;
+    liberarPainel();
     limpar(painel);
+    if (soltarVoltar) {
+      const soltar = soltarVoltar;
+      soltarVoltar = null;
+      soltar();
+    }
   }
 
   function render() {
@@ -139,10 +148,18 @@ export function criarAjustes({
   }
 
   async function abrir() {
-    aberto = true;
+    if (!aberto) {
+      aberto = true;
+      travarPainel();
+      if (!soltarVoltar) {
+        soltarVoltar = comVoltar(() => {
+          soltarVoltar = null;
+          fechar();
+        });
+      }
+    }
     painel.hidden = false;
     fundo.hidden = false;
-    document.body.classList.add('painel-aberto');
     carregando = true;
     eventos = [];
     render();

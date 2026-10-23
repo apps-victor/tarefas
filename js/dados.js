@@ -1087,11 +1087,12 @@ export class RepositorioSupabase {
     if (!uid) return;
     const anterior = this.arm.getItem(CHAVE_DONO);
     if (anterior && anterior !== uid) {
-      // Outra conta no mesmo navegador: não mistura cache nem fila.
+      // Outra conta no mesmo navegador: não mistura cache, fila nem notas.
       this.tarefas = [];
       this.fila = [];
       this._salvarCache();
       this._salvarFila();
+      this.arm.removeItem(CHAVE_NOTAS);
     }
     this.arm.setItem(CHAVE_DONO, uid);
   }

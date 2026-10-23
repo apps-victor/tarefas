@@ -8,7 +8,12 @@ import {
   diaSemana,
   hojeSP,
 } from '../logica.js';
-import { h, limpar } from './dom.js';
+import {
+  h,
+  liberarPainel,
+  limpar,
+  travarPainel,
+} from './dom.js';
 import { icone } from './icones.js';
 
 function mensagemErro(e) {
@@ -61,6 +66,18 @@ export function criarDetalhes({
   let statusTexto = '';
   let soltarVoltar = null;
 
+  // Última versão conhecida de cada tarefa editada nesta sessão. Permite
+  // terminar de salvar um campo depois que o painel fechou, sem usar uma
+  // versão velha em edições encadeadas.
+  const versoes = new Map();
+  function registrar(tarefa) {
+    if (tarefa && tarefa.id) versoes.set(tarefa.id, tarefa);
+  }
+  function alvoDe(id) {
+    if (tarefaAtual && tarefaAtual.id === id) return tarefaAtual;
+    return versoes.get(id) || null;
+  }
+
   // Edições em campos diferentes acontecem em sequência (blur após blur).
   // A fila evita que a segunda use uma versão já vencida pela primeira.
   let cadeia = Promise.resolve();
@@ -76,7 +93,24 @@ export function criarDetalhes({
     if (alvo) alvo.textContent = statusTexto;
   }
 
+  // O campo focado pode ter sido editado sem blur (voltar, Esc). Dispara o
+  // change dele antes de fechar para a fila salvar com a versão correta.
+  function confirmarCampo() {
+    const ativo = document.activeElement;
+    if (!ativo || !painel.contains(ativo)) return;
+    if (
+      !ativo.matches(
+        'input:not([type="checkbox"]):not([type="button"]), textarea',
+      )
+    ) {
+      return;
+    }
+    ativo.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function fechar() {
+    if (!aberto) return;
+    confirmarCampo();
     aberto = false;
     tarefaAtual = null;
     personalizado = null;
@@ -84,7 +118,7 @@ export function criarDetalhes({
     eventosCache = null;
     painel.hidden = true;
     fundo.hidden = true;
-    document.body.classList.remove('painel-aberto');
+    liberarPainel();
     limpar(painel);
     if (soltarVoltar) {
       const soltar = soltarVoltar;
@@ -96,6 +130,7 @@ export function criarDetalhes({
   function aplicarTarefa(nova) {
     if (!nova || !aberto || !tarefaAtual || nova.id !== tarefaAtual.id) return;
     tarefaAtual = nova;
+    registrar(nova);
     render();
   }
 
@@ -113,44 +148,59 @@ export function criarDetalhes({
   }
 
   function salvar(campos, { rerender = false } = {}) {
+    const id = tarefaAtual && tarefaAtual.id;
+    if (!id) return Promise.resolve();
     return emOrdem(async () => {
-      if (!tarefaAtual) return;
+      const alvo = alvoDe(id);
+      if (!alvo) return;
       try {
-        const nova = await aoSalvar(tarefaAtual, campos);
-        if (nova) {
+        const nova = await aoSalvar(alvo, campos);
+        if (!nova) return;
+        registrar(nova);
+        if (aberto && tarefaAtual && tarefaAtual.id === id) {
           tarefaAtual = nova;
           personalizado = null;
           status('Salvo');
-          if (rerender && aberto) render();
+          if (rerender) render();
         }
       } catch (e) {
-        status(mensagemErro(e));
-        if (aberto) render();
+        if (aberto && tarefaAtual && tarefaAtual.id === id) {
+          status(mensagemErro(e));
+          render();
+        }
       }
     });
   }
 
   function acaoSubtarefa(acao, sub, valor) {
+    const id = tarefaAtual && tarefaAtual.id;
+    if (!id) return Promise.resolve();
     return emOrdem(async () => {
-      if (!tarefaAtual) return;
+      const alvo = alvoDe(id);
+      if (!alvo) return;
       try {
         let nova = null;
         if (acao === 'criar') {
-          nova = await aoSubCriar(tarefaAtual.id, valor);
+          nova = await aoSubCriar(alvo.id, valor);
         } else if (acao === 'marcar') {
-          nova = await aoSubMarcar(tarefaAtual.id, sub.id, valor);
+          nova = await aoSubMarcar(alvo.id, sub.id, valor);
         } else if (acao === 'editar') {
-          nova = await aoSubEditar(tarefaAtual.id, sub.id, valor);
+          nova = await aoSubEditar(alvo.id, sub.id, valor);
         } else if (acao === 'apagar') {
-          nova = await aoSubApagar(tarefaAtual.id, sub.id);
+          nova = await aoSubApagar(alvo.id, sub.id);
         }
-        status('Salvo');
-        if (nova) {
-          tarefaAtual = nova;
-          if (aberto) render();
+        if (nova) registrar(nova);
+        if (aberto && tarefaAtual && tarefaAtual.id === id) {
+          status('Salvo');
+          if (nova) {
+            tarefaAtual = nova;
+            render();
+          }
         }
       } catch (e) {
-        status(mensagemErro(e));
+        if (aberto && tarefaAtual && tarefaAtual.id === id) {
+          status(mensagemErro(e));
+        }
       }
     });
   }
@@ -236,6 +286,7 @@ export function criarDetalhes({
     });
     entrada.addEventListener('change', () => {
       const data = entrada.value || null;
+      if (data === (tarefa.quando || null)) return;
       const campos = { quando: data };
       if (data && tarefa.repetir) {
         campos.repetir = repetirAjustadoParaData(tarefa.repetir, data);
@@ -253,7 +304,9 @@ export function criarDetalhes({
       'aria-label': 'Hora',
     });
     entrada.addEventListener('change', () => {
-      salvar({ hora: entrada.value || null });
+      const hora = entrada.value || null;
+      if (hora === (tarefa.hora || null)) return;
+      salvar({ hora });
     });
     return entrada;
   }
@@ -370,6 +423,13 @@ export function criarDetalhes({
           365,
           Math.max(2, Number(numero.value) || 2),
         );
+        if (
+          personalizado &&
+          personalizado.freq === freq.value &&
+          personalizado.intervalo === intervalo
+        ) {
+          return;
+        }
         personalizado = { freq: freq.value, intervalo };
         salvar(
           { repetir: montarRepetir(personalizado) },
@@ -414,6 +474,7 @@ export function criarDetalhes({
         'aria-label': `Feita: ${sub.texto}`,
       });
       check.addEventListener('change', () => {
+        if (check.checked === (sub.feita === true)) return;
         acaoSubtarefa('marcar', sub, check.checked);
       });
       const checkAlvo = h('label', { class: 'sub-check-alvo' });
@@ -648,8 +709,17 @@ export function criarDetalhes({
 
   function abrir(tarefa) {
     if (!tarefa) return;
-    tarefaAtual = tarefa;
-    aberto = true;
+    const anterior = versoes.get(tarefa.id);
+    const alvo =
+      anterior && Number(anterior.versao) > Number(tarefa.versao)
+        ? anterior
+        : tarefa;
+    tarefaAtual = alvo;
+    registrar(alvo);
+    if (!aberto) {
+      aberto = true;
+      travarPainel();
+    }
     personalizado = null;
     historicoAberto = false;
     eventosCache = null;
@@ -657,7 +727,6 @@ export function criarDetalhes({
     render();
     painel.hidden = false;
     fundo.hidden = false;
-    document.body.classList.add('painel-aberto');
     if (!soltarVoltar) {
       soltarVoltar = comVoltar(() => {
         soltarVoltar = null;

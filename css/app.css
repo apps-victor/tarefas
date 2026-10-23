@@ -353,11 +353,22 @@ body.arrastando .aba:not([data-aba='tudo']) {
 }
 
 .modo {
+  position: relative;
   min-height: 40px;
   padding: 0 8px;
   font-size: 13.5px;
   color: var(--lapis);
   border-radius: 8px;
+}
+
+/* Alvos de toque de 44 px sem aumentar o desenho. */
+.modo::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  bottom: -2px;
 }
 
 .modo.ativo {
@@ -374,7 +385,7 @@ body.arrastando .aba:not([data-aba='tudo']) {
 
 .busca input {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--pauta-forte);
   border-radius: 10px;
@@ -421,6 +432,7 @@ body.arrastando .aba:not([data-aba='tudo']) {
 }
 
 .faixa-nome {
+  position: relative;
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
@@ -430,6 +442,15 @@ body.arrastando .aba:not([data-aba='tudo']) {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--tinta) 82%, var(--lapis));
+}
+
+.faixa-nome::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
 }
 
 .faixa-dia {
@@ -452,6 +473,7 @@ body.arrastando .aba:not([data-aba='tudo']) {
 }
 
 .faixa-mais {
+  position: relative;
   width: 40px;
   height: 32px;
   display: inline-flex;
@@ -459,6 +481,16 @@ body.arrastando .aba:not([data-aba='tudo']) {
   justify-content: center;
   color: var(--lapis-claro);
   border-radius: 8px;
+}
+
+.faixa-mais::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 .faixa-mais:hover {
@@ -622,12 +654,22 @@ body.arrastando .faixa.vazia .faixa-vazia {
 }
 
 .menu-botao {
+  position: relative;
   width: 40px;
   height: 44px;
   display: grid;
   place-items: center;
   color: var(--lapis-claro);
   border-radius: 8px;
+}
+
+.menu-botao::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  right: -2px;
 }
 
 .menu-botao:hover {
@@ -676,6 +718,45 @@ body.arrastando .faixa.vazia .faixa-vazia {
 @keyframes risco {
   to {
     width: calc(100% + 4px);
+  }
+}
+
+/* A recém-anotada: o anel de tinta surge e o título é escrito da esquerda
+   para a direita, como uma caneta passando. */
+
+.linha.a-anotar .anel {
+  opacity: 0;
+}
+
+.linha.a-anotar .titulo-texto {
+  clip-path: inset(0 100% 0 0);
+}
+
+.linha.recem-anotada .anel {
+  animation: anel-surgir 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.linha.recem-anotada .titulo-texto {
+  animation: escrever 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes anel-surgir {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes escrever {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }
 
@@ -943,14 +1024,21 @@ body.arrastando {
   color: var(--lapis);
 }
 
+.nova-aviso {
+  font-size: 12px;
+  color: var(--ambar);
+}
+
 .opcoes {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 0 0 12px;
 }
 
 .chip {
+  position: relative;
   min-height: 38px;
   padding: 6px 14px;
   border: 1px solid var(--pauta-forte);
@@ -959,6 +1047,15 @@ body.arrastando {
   color: var(--grafite);
   background: var(--papel-2);
   transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.chip::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
 }
 
 .chip-caixa {
@@ -973,7 +1070,7 @@ body.arrastando {
 
 .opcoes-datas .entrada {
   width: auto;
-  min-height: 38px;
+  min-height: 44px;
   padding: 6px 10px;
   border-radius: 999px;
   font-size: 14px;
@@ -996,41 +1093,6 @@ body.arrastando {
 
 .botao-tinta:active {
   transform: scale(0.99);
-}
-
-.nova-anotadas {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-}
-
-.nova-anotadas li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid var(--pauta);
-  font-size: 14px;
-  animation: entra 260ms ease-out;
-}
-
-.anotada-visto {
-  color: var(--tinta);
-  font-weight: 700;
-}
-
-.anotada-titulo {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.anotada-onde {
-  font-size: 12px;
-  color: var(--lapis);
-  white-space: nowrap;
 }
 
 @keyframes entra {
@@ -1102,6 +1164,7 @@ body.arrastando {
 }
 
 .menu-chips .menu-item {
+  position: relative;
   width: auto;
   min-height: 38px;
   padding: 6px 14px;
@@ -1109,6 +1172,15 @@ body.arrastando {
   border-radius: 999px;
   text-align: center;
   font-size: 14px;
+}
+
+.menu-chips .menu-item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
 }
 
 .menu-chips .menu-item.chip-caixa {
@@ -1292,7 +1364,7 @@ body.arrastando {
 .sub-texto {
   flex: 1;
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 4px;
   border: 0;
   background: transparent;
