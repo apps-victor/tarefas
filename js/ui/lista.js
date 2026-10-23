@@ -5,6 +5,7 @@ import {
   ROTULOS_AREA,
   faixaDe,
   formatarHora,
+  origemExterna,
   progresso,
   rotuloData,
   dominio,
@@ -216,13 +217,13 @@ export function criarLista({
     if (reservada && (tarefa.client_ref === reservada || tarefa.id === reservada)) {
       linha.classList.add('a-anotar');
     }
-    const buriti = String(tarefa.ref_externa || '').startsWith('cf:');
+    const externa = origemExterna(tarefa);
 
     const circulo = h('button', {
-      class: `circulo${buriti ? ' tracejado' : ''}`,
+      class: `circulo${externa ? ' tracejado' : ''}`,
       type: 'button',
-      'aria-label': buriti
-        ? `Abrir ${tarefa.titulo} no Buriti`
+      'aria-label': externa
+        ? `Abrir ${tarefa.titulo} no ${externa}`
         : `Concluir ${tarefa.titulo}`,
     });
     const anel = h('span', { class: 'anel', 'aria-hidden': 'true' });
@@ -230,7 +231,7 @@ export function criarLista({
     circulo.appendChild(anel);
     circulo.addEventListener('click', (evento) => {
       evento.stopPropagation();
-      if (buriti) {
+      if (externa) {
         if (dominio(tarefa.link)) aoAbrirLink(tarefa);
         else aoAbrir(tarefa);
         return;

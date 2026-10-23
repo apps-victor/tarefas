@@ -1,10 +1,10 @@
-// Service worker do PWA Tarefas.
+// Service worker do PWA Caderno.
 // - index.html/raiz: network-first (para o callback do login por link nunca ficar velho)
 // - js/css/ícones: cache-first
 // - requisições ao Supabase e URLs com ?code= nunca são cacheadas
 
 // Ao publicar mudanças nos arquivos, suba a versão (v8, v9…).
-const VERSAO = '9e62056';
+const VERSAO = '9213f7f';
 const CACHE = `tarefas-${VERSAO}`;
 
 const ESTATICOS = [

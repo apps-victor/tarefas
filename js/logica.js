@@ -457,6 +457,32 @@ export function feitasPorDia(tarefas, hoje) {
 }
 
 // ---------------------------------------------------------------------------
+// Itens copiados de outros apps (Buriti, Google Agenda)
+
+// Prefixo de `ref_externa` → de onde o item veio, como aparece para o usuário.
+const REF_EXTERNAS = [
+  ['cf:', 'Buriti'],
+  ['gcal:', 'Google Agenda'],
+];
+
+/**
+ * Nome de onde veio a tarefa, quando ela é um item copiado de outro app
+ * ('Buriti', 'Google Agenda'); null para tarefas normais. Esses itens têm o
+ * círculo tracejado e o toque nele abre o `link` em vez de concluir.
+ */
+export function origemExterna(tarefa) {
+  const ref = String((tarefa && tarefa.ref_externa) || '');
+  if (!ref) return null;
+  const achado = REF_EXTERNAS.find(([prefixo]) => ref.startsWith(prefixo));
+  return achado ? achado[1] : null;
+}
+
+/** A tarefa veio de fora (Buriti, Google Agenda)? */
+export function ehExterna(tarefa) {
+  return origemExterna(tarefa) !== null;
+}
+
+// ---------------------------------------------------------------------------
 // Utilitários de apresentação
 
 /** 'hoje' | 'amanhã' | 'sex' | '30/10' */
