@@ -27,6 +27,20 @@ const CAMINHOS = {
   seta: [
     ['path', { d: 'M9 6l6 6-6 6' }],
   ],
+  mais_simples: [
+    ['path', { d: 'M12 5v14' }],
+    ['path', { d: 'M5 12h14' }],
+  ],
+  feitas: [
+    ['circle', { cx: '12', cy: '12', r: '8.5' }],
+    ['path', { d: 'M8.5 12.2l2.4 2.4 4.6-5' }],
+  ],
+  calendario: [
+    ['path', { d: 'M5 7.5a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 19 7.5v10a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5z' }],
+    ['path', { d: 'M5 10.5h14' }],
+    ['path', { d: 'M9 4v4' }],
+    ['path', { d: 'M15 4v4' }],
+  ],
   externo: [
     ['path', { d: 'M14 5h5v5' }],
     ['path', { d: 'M19 5l-7 7' }],

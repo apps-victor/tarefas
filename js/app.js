@@ -1,45 +1,57 @@
-// Ponto de entrada do PWA.
+// Ponto de entrada do PWA (caderno: caixas, faixas, notas e feitas).
 
 import { dados, modoLocal } from './dados.js';
 import {
   AREAS,
   ROTULOS_AREA,
-  agrupar,
+  ROTULOS_FAIXA,
+  camposParaFaixa,
   dataPorExtenso,
+  faixaDe,
   hojeSP,
+  organizarCaixa,
   rotuloCurto,
   semAcento,
-  somarDias,
 } from './logica.js';
 import { criarLista } from './ui/lista.js';
-import { criarBarra } from './ui/criar.js';
+import { criarNova, criarEscolherData } from './ui/nova.js';
+import { criarNotas } from './ui/notas.js';
+import { criarFeitas } from './ui/feitas.js';
 import { criarDetalhes } from './ui/detalhes.js';
 import { criarAjustes } from './ui/ajustes.js';
 import { h, limpar } from './ui/dom.js';
 import { icone } from './ui/icones.js';
 
+const CAIXAS = ['tudo', ...AREAS];
+const MODOS = [
+  { chave: 'tarefas', rotulo: 'Tarefas' },
+  { chave: 'notas', rotulo: 'Notas' },
+  { chave: 'feitas', rotulo: 'Feitas' },
+];
+
 const estado = {
   tarefas: [],
   hoje: hojeSP(),
-  filtro: lerFiltro(),
+  caixa: lerLembrado('tarefas.caixa.v2', CAIXAS, 'tudo'),
+  modo: 'tarefas',
   busca: '',
   iaRecentes: new Set(),
   autenticado: modoLocal,
   membro: modoLocal ? 'dono' : null,
 };
 
-function lerFiltro() {
+function lerLembrado(chave, aceitos, padrao) {
   try {
-    const valor = localStorage.getItem('tarefas.filtro.v1');
-    return valor && ['tudo', ...AREAS].includes(valor) ? valor : 'tudo';
+    const valor = localStorage.getItem(chave);
+    return valor && aceitos.includes(valor) ? valor : padrao;
   } catch {
-    return 'tudo';
+    return padrao;
   }
 }
 
-function salvarFiltro(valor) {
+function lembrar(chave, valor) {
   try {
-    localStorage.setItem('tarefas.filtro.v1', valor);
+    localStorage.setItem(chave, valor);
   } catch {
     // sem storage
   }
@@ -77,19 +89,57 @@ const el = {
   loginStatus: document.getElementById('login-status'),
   btnSairSemAcesso: document.getElementById('btn-sair-sem-acesso'),
   dataHoje: document.getElementById('data-hoje'),
-  areas: document.getElementById('areas'),
+  abas: document.getElementById('abas'),
+  nomeCaixa: document.getElementById('nome-caixa'),
+  modos: document.getElementById('modos'),
   btnBusca: document.getElementById('btn-busca'),
   btnAjustes: document.getElementById('btn-ajustes'),
+  btnNova: document.getElementById('btn-nova'),
   buscaCaixa: document.getElementById('busca-caixa'),
   busca: document.getElementById('busca'),
+  folha: document.getElementById('folha'),
   lista: document.getElementById('lista'),
-  vazio: document.getElementById('vazio'),
+  notas: document.getElementById('notas'),
+  feitas: document.getElementById('feitas'),
   menu: document.getElementById('menu'),
   menuFundo: document.getElementById('menu-fundo'),
   toast: document.getElementById('toast'),
   toastTexto: document.getElementById('toast-texto'),
   toastAcao: document.getElementById('toast-acao'),
 };
+
+// ---------------------------------------------------------------------------
+// Botão "voltar" do Android: fecha a folha aberta em vez de sair do app.
+
+const pilhaVoltar = [];
+let ignorarVoltar = 0;
+
+function comVoltar(fechar) {
+  // O aviso de baixo ficaria por cima da folha que está abrindo.
+  if (typeof ocultarToast === 'function') ocultarToast();
+  try {
+    history.pushState({ folha: true }, '');
+  } catch {
+    return () => {};
+  }
+  pilhaVoltar.push(fechar);
+  return () => {
+    const i = pilhaVoltar.lastIndexOf(fechar);
+    if (i < 0) return;
+    pilhaVoltar.splice(i, 1);
+    ignorarVoltar += 1;
+    history.back();
+  };
+}
+
+window.addEventListener('popstate', () => {
+  if (ignorarVoltar > 0) {
+    ignorarVoltar -= 1;
+    return;
+  }
+  const fechar = pilhaVoltar.pop();
+  if (fechar) fechar();
+});
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -131,37 +181,75 @@ el.toastAcao.addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Áreas e busca
+// Caixas (abas), modos e busca
+
+function trocarCaixa(caixa, { direcao = 0 } = {}) {
+  if (!CAIXAS.includes(caixa) || caixa === estado.caixa) return;
+  estado.caixa = caixa;
+  lembrar('tarefas.caixa.v2', caixa);
+  renderAreas();
+  renderTudo();
+  if (direcao && typeof el.folha.animate === 'function') {
+    try {
+      el.folha.animate(
+        [
+          { transform: `translateX(${direcao * 28}px)`, opacity: 0.2 },
+          { transform: 'translateX(0)', opacity: 1 },
+        ],
+        { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)' },
+      );
+    } catch {
+      // sem animação
+    }
+  }
+  window.scrollTo({ top: 0 });
+}
+
+function trocarModo(modo) {
+  if (modo === estado.modo) return;
+  estado.modo = modo;
+  renderAreas();
+  renderTudo();
+  window.scrollTo({ top: 0 });
+}
 
 function renderAreas() {
-  limpar(el.areas);
-  const opcoes = [
-    { chave: 'tudo', rotulo: 'Tudo' },
-    ...AREAS.map((area) => ({ chave: area, rotulo: ROTULOS_AREA[area] })),
-  ];
-  for (const opcao of opcoes) {
-    const ativo = estado.filtro === opcao.chave;
-    const botao = h('button', {
-      class: `area-chip${ativo ? ' ativo' : ''}`,
+  el.telaApp.dataset.caixa = estado.caixa;
+  el.telaApp.dataset.modo = estado.modo;
+  el.nomeCaixa.textContent =
+    estado.caixa === 'tudo' ? 'Tudo' : ROTULOS_AREA[estado.caixa];
+
+  limpar(el.abas);
+  for (const caixa of CAIXAS) {
+    const ativa = estado.caixa === caixa;
+    const aba = h('button', {
+      class: `aba tinta-${caixa}${ativa ? ' ativa' : ''}`,
       type: 'button',
-      'aria-pressed': ativo ? 'true' : 'false',
+      'aria-pressed': ativa ? 'true' : 'false',
+      dataset: { aba: caixa },
     });
-    if (opcao.chave !== 'tudo') {
-      botao.appendChild(
-        h('span', {
-          class: `bolinha area-${opcao.chave}`,
-          'aria-hidden': 'true',
-        }),
-      );
-    }
-    botao.appendChild(h('span', { text: opcao.rotulo }));
-    botao.addEventListener('click', () => {
-      estado.filtro = opcao.chave;
-      salvarFiltro(opcao.chave);
-      renderAreas();
-      renderTudo();
+    aba.appendChild(
+      h('span', { text: caixa === 'tudo' ? 'Tudo' : ROTULOS_AREA[caixa] }),
+    );
+    aba.addEventListener('click', () => {
+      const de = CAIXAS.indexOf(estado.caixa);
+      trocarCaixa(caixa, { direcao: CAIXAS.indexOf(caixa) > de ? 1 : -1 });
     });
-    el.areas.appendChild(botao);
+    el.abas.appendChild(aba);
+  }
+
+  limpar(el.modos);
+  for (const modo of MODOS) {
+    const ativo = estado.modo === modo.chave;
+    const botao = h('button', {
+      class: `modo${ativo ? ' ativo' : ''}`,
+      type: 'button',
+      role: 'tab',
+      'aria-selected': ativo ? 'true' : 'false',
+      text: modo.rotulo,
+    });
+    botao.addEventListener('click', () => trocarModo(modo.chave));
+    el.modos.appendChild(botao);
   }
 }
 
@@ -190,37 +278,80 @@ el.busca.addEventListener('keydown', (evento) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Render da lista
+// Deslizar o dedo para o lado troca de caixa (longe da borda, para não brigar
+// com o gesto "voltar" do Android).
+(() => {
+  let inicio = null;
+  el.folha.addEventListener(
+    'touchstart',
+    (evento) => {
+      const t = evento.touches[0];
+      const largura = window.innerWidth;
+      if (evento.touches.length !== 1 || t.clientX < 28 || t.clientX > largura - 28) {
+        inicio = null;
+        return;
+      }
+      if (evento.target.closest('textarea, input')) {
+        inicio = null;
+        return;
+      }
+      inicio = { x: t.clientX, y: t.clientY, em: Date.now() };
+    },
+    { passive: true },
+  );
+  el.folha.addEventListener(
+    'touchend',
+    (evento) => {
+      if (!inicio || lista.estaArrastando()) return;
+      const t = evento.changedTouches[0];
+      const dx = t.clientX - inicio.x;
+      const dy = t.clientY - inicio.y;
+      const rapido = Date.now() - inicio.em < 600;
+      inicio = null;
+      if (!rapido || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+      const i = CAIXAS.indexOf(estado.caixa);
+      const proxima = dx < 0 ? CAIXAS[i + 1] : CAIXAS[i - 1];
+      if (proxima) trocarCaixa(proxima, { direcao: dx < 0 ? 1 : -1 });
+    },
+    { passive: true },
+  );
+})();
 
-function tarefasFiltradas() {
-  let lista = estado.tarefas;
-  if (estado.filtro !== 'tudo') {
-    lista = lista.filter((t) => t.area === estado.filtro);
-  }
+// ---------------------------------------------------------------------------
+// Render
+
+function daCaixa(lista) {
+  let saida = lista;
+  if (estado.caixa !== 'tudo') saida = saida.filter((t) => t.area === estado.caixa);
   const termo = semAcento(estado.busca.trim());
   if (termo) {
-    lista = lista.filter(
-      (t) =>
-        semAcento(t.titulo).includes(termo) ||
-        semAcento(t.notas).includes(termo),
+    saida = saida.filter(
+      (t) => semAcento(t.titulo).includes(termo) || semAcento(t.notas).includes(termo),
     );
   }
-  return lista;
+  return saida;
 }
 
 function renderTudo() {
   el.dataHoje.textContent = dataPorExtenso(estado.hoje);
-  const grupos = agrupar(tarefasFiltradas(), estado.hoje);
-  lista.render(grupos, {
-    hoje: estado.hoje,
-    iaRecentes: estado.iaRecentes,
-  });
-  const total = grupos.reduce((soma, g) => soma + g.tarefas.length, 0);
-  el.vazio.hidden = total > 0;
-  el.vazio.textContent = estado.busca.trim()
-    ? 'Nada encontrado.'
-    : 'Nada para hoje.';
+  el.lista.hidden = estado.modo !== 'tarefas';
+  el.notas.hidden = estado.modo !== 'notas';
+  el.feitas.hidden = estado.modo !== 'feitas';
+  el.btnNova.hidden = estado.modo === 'notas';
+  if (estado.modo === 'tarefas') {
+    lista.render(organizarCaixa(daCaixa(estado.tarefas), estado.hoje), {
+      caixa: estado.caixa,
+      hoje: estado.hoje,
+      busca: estado.busca.trim(),
+      iaRecentes: estado.iaRecentes,
+    });
+  } else if (estado.modo === 'feitas') {
+    feitas.mostrar(daCaixa(estado.tarefas), { caixa: estado.caixa, hoje: estado.hoje });
+  } else if (estado.modo === 'notas' && el.notas.dataset.caixa !== estado.caixa) {
+    el.notas.dataset.caixa = estado.caixa;
+    notas.mostrar(estado.caixa);
+  }
+  if (estado.modo !== 'notas') delete el.notas.dataset.caixa;
 }
 
 async function recarregar() {
@@ -229,9 +360,7 @@ async function recarregar() {
     if (!modoLocal) {
       try {
         const eventos = (await dados.mudancasIa(24)) || [];
-        estado.iaRecentes = new Set(
-          eventos.map((e) => e.tarefa_id).filter(Boolean),
-        );
+        estado.iaRecentes = new Set(eventos.map((e) => e.tarefa_id).filter(Boolean));
       } catch {
         // sem eventos agora; mantém o último mapa
       }
@@ -245,12 +374,13 @@ async function recarregar() {
 // ---------------------------------------------------------------------------
 // Ações sobre tarefas
 
+function atual(tarefa) {
+  return estado.tarefas.find((t) => t.id === tarefa.id) || null;
+}
+
 async function criarTarefa(campos) {
   try {
-    await dados.criar({
-      ...campos,
-      titulo: campos.titulo || 'Sem título',
-    });
+    await dados.criar(campos);
     await recarregar();
   } catch (e) {
     toast(mensagem(e));
@@ -271,49 +401,19 @@ async function concluirTarefa(tarefa) {
   try {
     const resultado = await dados.concluir(tarefa.id);
     const proxima = resultado && resultado.tarefa && resultado.tarefa.quando;
-    if (tarefa.repetir) {
-      const texto = proxima
-        ? `Concluída · Próxima: ${rotuloCurto(proxima)}`
-        : 'Concluída';
-      toast(
-        texto,
-        {
-          rotulo: 'Desfazer',
-          acao: async () => {
-            await dados.desfazerConclusao(tarefa.id, antes);
-            await recarregar();
-          },
-        },
-        5000,
-      );
-    } else {
-      toast('Concluída', {
-        rotulo: 'Desfazer',
-        acao: async () => {
+    const desfazer = tarefa.repetir
+      ? async () => {
+          await dados.desfazerConclusao(tarefa.id, antes);
+          await recarregar();
+        }
+      : async () => {
           await dados.reabrir(tarefa.id);
           await recarregar();
-        },
-      });
-    }
-    await recarregar();
-  } catch (e) {
-    toast(mensagem(e));
-  }
-}
-
-async function adiarTarefa(tarefa, para) {
-  const anterior = tarefa.quando || null;
-  try {
-    await dados.adiar(tarefa.id, para);
-    toast(`Adiada para ${rotuloCurto(para)}`, {
-      rotulo: 'Desfazer',
-      acao: async () => {
-        const atual = estado.tarefas.find((t) => t.id === tarefa.id);
-        if (!atual) return;
-        await dados.atualizar(atual.id, atual.versao, { quando: anterior });
-        await recarregar();
-      },
-    });
+        };
+    toast(
+      tarefa.repetir && proxima ? `Feito · volta ${rotuloCurto(proxima)}` : 'Feito',
+      { rotulo: 'Desfazer', acao: desfazer },
+    );
     await recarregar();
   } catch (e) {
     toast(mensagem(e));
@@ -324,7 +424,7 @@ async function salvarTarefa(tarefa, campos) {
   try {
     await dados.atualizar(tarefa.id, tarefa.versao, campos);
     await recarregar();
-    return estado.tarefas.find((t) => t.id === tarefa.id) || null;
+    return atual(tarefa);
   } catch (e) {
     if (e && e.codigo === 'conflito') {
       await recarregar();
@@ -334,6 +434,54 @@ async function salvarTarefa(tarefa, campos) {
     }
     throw e;
   }
+}
+
+/** Grava campos e oferece "Desfazer" voltando os valores anteriores. */
+async function mudarComDesfazer(tarefa, campos, texto) {
+  const agora = atual(tarefa);
+  if (!agora) return;
+  const anteriores = {};
+  for (const chave of Object.keys(campos)) {
+    anteriores[chave] = agora[chave] === undefined ? null : agora[chave];
+  }
+  try {
+    await dados.atualizar(agora.id, agora.versao, campos);
+    await recarregar();
+    toast(texto, {
+      rotulo: 'Desfazer',
+      acao: async () => {
+        const depois = atual(tarefa);
+        if (!depois) return;
+        await dados.atualizar(depois.id, depois.versao, anteriores);
+        await recarregar();
+      },
+    });
+  } catch (e) {
+    toast(mensagem(e));
+  }
+}
+
+async function moverTarefa(tarefa, { faixa, area }) {
+  if (area) {
+    await mudarComDesfazer(tarefa, { area }, `Foi para ${ROTULOS_AREA[area]}`);
+    return;
+  }
+  if (faixa === 'com_data') {
+    const data = await escolherData.escolher({ atual: tarefa.quando || null });
+    if (!data) return;
+    const campos = { quando: data };
+    if (tarefa.estado === 'esperando') campos.estado = 'aberta';
+    await mudarComDesfazer(tarefa, campos, `Marcada para ${rotuloCurto(data)}`);
+    return;
+  }
+  const campos = camposParaFaixa(tarefa, faixa);
+  if (!campos) return;
+  const perdeuData = Object.prototype.hasOwnProperty.call(campos, 'quando');
+  await mudarComDesfazer(
+    tarefa,
+    campos,
+    `${ROTULOS_FAIXA[faixa]}${perdeuData ? ' · data tirada' : ''}`,
+  );
 }
 
 async function comSub(tarefaId, operacao) {
@@ -348,10 +496,10 @@ async function comSub(tarefaId, operacao) {
 }
 
 async function arquivarTarefa(tarefa) {
-  const atual = estado.tarefas.find((t) => t.id === tarefa.id);
-  if (!atual) return null;
+  const agora = atual(tarefa);
+  if (!agora) return null;
   try {
-    await dados.atualizar(atual.id, atual.versao, { estado: 'arquivada' });
+    await dados.atualizar(agora.id, agora.versao, { estado: 'arquivada' });
     await recarregar();
     toast('Arquivada', {
       rotulo: 'Desfazer',
@@ -360,7 +508,7 @@ async function arquivarTarefa(tarefa) {
         await recarregar();
       },
     });
-    return estado.tarefas.find((t) => t.id === tarefa.id) || null;
+    return atual(tarefa);
   } catch (e) {
     toast(mensagem(e));
     throw e;
@@ -371,7 +519,7 @@ async function reabrirTarefa(tarefa) {
   try {
     await dados.reabrir(tarefa.id);
     await recarregar();
-    return estado.tarefas.find((t) => t.id === tarefa.id) || null;
+    return atual(tarefa);
   } catch (e) {
     toast(mensagem(e));
     throw e;
@@ -386,14 +534,25 @@ function abrirLink(tarefa) {
 // ---------------------------------------------------------------------------
 // Menu da linha
 
+let soltarMenu = null;
+
 function fecharMenu() {
   el.menu.hidden = true;
   el.menuFundo.hidden = true;
   limpar(el.menu);
+  if (soltarMenu) {
+    const soltar = soltarMenu;
+    soltarMenu = null;
+    soltar();
+  }
 }
 
-function itemMenu(texto, aoClicar) {
-  const botao = h('button', { class: 'menu-item', type: 'button', text: texto });
+function itemMenu(texto, aoClicar, classe = '') {
+  const botao = h('button', {
+    class: `menu-item${classe ? ` ${classe}` : ''}`,
+    type: 'button',
+    text: texto,
+  });
   botao.addEventListener('click', async () => {
     fecharMenu();
     try {
@@ -407,61 +566,44 @@ function itemMenu(texto, aoClicar) {
 
 function abrirMenu(tarefa) {
   limpar(el.menu);
-  el.menu.appendChild(
-    h('p', { class: 'menu-titulo', text: tarefa.titulo }),
-  );
+  el.menu.className = `menu tinta-${tarefa.area || 'pessoal'}`;
+  el.menu.appendChild(h('p', { class: 'menu-titulo', text: tarefa.titulo }));
 
-  el.menu.appendChild(
-    itemMenu(tarefa.foco ? 'Remover foco' : 'Foco', async () => {
-      const atual = estado.tarefas.find((t) => t.id === tarefa.id);
-      if (!atual) return;
-      await dados.atualizar(atual.id, atual.versao, { foco: !atual.foco });
-      await recarregar();
-    }),
-  );
+  const faixaAtual = faixaDe(tarefa);
+  el.menu.appendChild(h('p', { class: 'menu-secao', text: 'Mover para' }));
+  const faixas = h('div', { class: 'menu-chips' });
+  for (const faixa of ['imediato', 'proximo', 'em_breve', 'com_data', 'esperando']) {
+    const botao = itemMenu(
+      faixa === 'com_data' && faixaAtual === 'com_data' ? 'Outra data' : ROTULOS_FAIXA[faixa],
+      () => moverTarefa(tarefa, { faixa }),
+      `chip${faixa === faixaAtual && faixa !== 'com_data' ? ' ativo' : ''}`,
+    );
+    faixas.appendChild(botao);
+  }
+  el.menu.appendChild(faixas);
 
-  const esperando = tarefa.estado === 'esperando';
-  el.menu.appendChild(
-    itemMenu(esperando ? 'Tirar de esperando' : 'Esperando', async () => {
-      const atual = estado.tarefas.find((t) => t.id === tarefa.id);
-      if (!atual) return;
-      await dados.atualizar(atual.id, atual.versao, {
-        estado: esperando ? 'aberta' : 'esperando',
-      });
-      await recarregar();
-    }),
-  );
+  el.menu.appendChild(h('p', { class: 'menu-secao', text: 'Caixa' }));
+  const caixas = h('div', { class: 'menu-chips' });
+  for (const area of AREAS) {
+    caixas.appendChild(
+      itemMenu(
+        ROTULOS_AREA[area],
+        () => (area === tarefa.area ? null : moverTarefa(tarefa, { area })),
+        `chip chip-caixa tinta-${area}${area === tarefa.area ? ' ativo' : ''}`,
+      ),
+    );
+  }
+  el.menu.appendChild(caixas);
 
-  el.menu.appendChild(
-    itemMenu('Adiar para amanhã', async () => {
-      await adiarTarefa(tarefa, somarDias(estado.hoje, 1));
-    }),
-  );
-
-  const escolher = h('div', { class: 'menu-adiar' });
-  const data = h('input', {
-    class: 'entrada entrada-data-menu',
-    type: 'date',
-    value: somarDias(estado.hoje, 1),
-    'aria-label': 'Adiar para',
-  });
-  data.addEventListener('change', async () => {
-    if (!data.value) return;
-    fecharMenu();
-    await adiarTarefa(tarefa, data.value);
-  });
-  escolher.appendChild(h('span', { class: 'suave', text: 'Adiar para…' }));
-  escolher.appendChild(data);
-  el.menu.appendChild(escolher);
-
-  el.menu.appendChild(
-    itemMenu('Arquivar', async () => {
-      await arquivarTarefa(tarefa);
-    }),
-  );
+  el.menu.appendChild(itemMenu('Abrir detalhes', () => detalhes.abrir(atual(tarefa) || tarefa)));
+  el.menu.appendChild(itemMenu('Arquivar', () => arquivarTarefa(tarefa), 'menu-discreto'));
 
   el.menuFundo.hidden = false;
   el.menu.hidden = false;
+  soltarMenu = comVoltar(() => {
+    soltarMenu = null;
+    fecharMenu();
+  });
 }
 
 el.menuFundo.addEventListener('click', fecharMenu);
@@ -469,12 +611,46 @@ el.menuFundo.addEventListener('click', fecharMenu);
 // ---------------------------------------------------------------------------
 // Módulos de interface
 
+const escolherData = criarEscolherData({ obterHoje: () => estado.hoje, comVoltar });
+
 const lista = criarLista({
   aoConcluir: concluirTarefa,
-  aoAbrir: (tarefa) => detalhes.abrir(tarefa),
+  aoReabrir: reabrirTarefa,
+  aoAbrir: (tarefa) => detalhes.abrir(atual(tarefa) || tarefa),
   aoAbrirLink: abrirLink,
-  aoAdiar: (tarefa) => adiarTarefa(tarefa, somarDias(estado.hoje, 1)),
   aoMenu: abrirMenu,
+  aoMover: moverTarefa,
+  aoNovaNaFaixa: (faixa, caixa) => nova.abrir({ faixa, caixa }),
+});
+
+const nova = criarNova({
+  aoCriar: criarTarefa,
+  obterHoje: () => estado.hoje,
+  comVoltar,
+  aoAviso: (texto) => toast(texto),
+});
+
+const notas = criarNotas({
+  aoLer: () => dados.notas(),
+  aoSalvar: (area, texto) => dados.salvarNota(area, texto),
+});
+
+const feitas = criarFeitas({
+  aoReabrir: async (tarefa) => {
+    await reabrirTarefa(tarefa);
+    toast('Voltou para a lista');
+  },
+});
+
+el.btnNova.addEventListener('click', () => nova.abrir({ caixa: estado.caixa }));
+
+document.addEventListener('keydown', (evento) => {
+  if (evento.key !== 'n' || evento.ctrlKey || evento.metaKey || evento.altKey) return;
+  const alvo = evento.target;
+  if (alvo && alvo.closest && alvo.closest('input, textarea, select, [contenteditable]')) return;
+  if (el.telaApp.hidden || nova.estaAberto() || detalhes.estaAberto()) return;
+  evento.preventDefault();
+  nova.abrir({ caixa: estado.caixa });
 });
 
 const detalhes = criarDetalhes({
@@ -496,12 +672,7 @@ const detalhes = criarDetalhes({
       return [];
     }
   },
-});
-
-criarBarra({
-  aoCriar: criarTarefa,
-  obterHoje: () => estado.hoje,
-  aoAviso: (texto) => toast(texto),
+  comVoltar,
 });
 
 async function listarMudancasIa() {
@@ -525,11 +696,7 @@ const ajustes = criarAjustes({
   aoListarIa: listarMudancasIa,
   aoDesfazerIa: async () => {
     const quantidade = await dados.desfazerIa(24);
-    toast(
-      quantidade > 0
-        ? `${quantidade} mudança(s) desfeita(s)`
-        : 'Nada para desfazer',
-    );
+    toast(quantidade > 0 ? `${quantidade} mudança(s) desfeita(s)` : 'Nada para desfazer');
     await recarregar();
     return quantidade;
   },
@@ -538,10 +705,7 @@ const ajustes = criarAjustes({
       const dadosJson = JSON.stringify(dados.exportar(), null, 2);
       const blob = new Blob([dadosJson], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
-      const link = h('a', {
-        href: url,
-        download: `tarefas-${estado.hoje}.json`,
-      });
+      const link = h('a', { href: url, download: `tarefas-${estado.hoje}.json` });
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -768,6 +932,7 @@ async function iniciar() {
   el.email.value = lerEmailLembrado();
   el.btnBusca.appendChild(icone('busca', { tamanho: 20 }));
   el.btnAjustes.appendChild(icone('ajustes', { tamanho: 20 }));
+  el.btnNova.appendChild(icone('mais_simples', { tamanho: 26 }));
   renderAreas();
 
   if (modoLocal) {
@@ -803,7 +968,8 @@ async function iniciar() {
   }, 60000);
 }
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+// No servidor de teste (localhost) fica sem service worker, para nunca servir arquivo velho.
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && location.hostname !== 'localhost') {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {
       // sem service worker (http simples, navegador antigo)

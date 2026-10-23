@@ -12,7 +12,7 @@ import {
   supabaseUrl,
   supabaseAnonKey,
 } from './config.js';
-import { proximaData, hojeSP, normalizarData } from './logica.js';
+import { proximaData, hojeSP, normalizarData, somarDias } from './logica.js';
 
 export const modoLocal = !supabaseUrl || !supabaseAnonKey;
 
@@ -21,9 +21,21 @@ const CHAVE_CACHE = 'tarefas.cache.v1';
 const CHAVE_FILA = 'tarefas.fila.v1';
 const CHAVE_MEMBRO = 'tarefas.membro.v1';
 const CHAVE_DONO = 'tarefas.dono.v1';
+const CHAVE_NOTAS = 'tarefas.notas.v1';
 
 const AREAS = ['casa', 'lapig', 'buriti', 'pessoal'];
+const PRIORIDADES = ['imediato', 'proximo', 'em_breve'];
 const LIMITE_LISTA = 500;
+// Feitas mais antigas que isso não vêm do servidor (a tela de Feitas mostra este período).
+const DIAS_FEITAS = 45;
+const LIMITE_NOTA = 20000;
+
+function validarNota(area, texto) {
+  if (!AREAS.includes(area)) throw erro('invalido:area');
+  if (typeof texto !== 'string' || texto.length > LIMITE_NOTA) {
+    throw erro('invalido:texto');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -180,6 +192,7 @@ const CAMPOS_CRIACAO = [
   'repetir',
   'link',
   'foco',
+  'prioridade',
   'estado',
   'ref_externa',
   'client_ref',
@@ -194,6 +207,7 @@ const CAMPOS_ATUALIZACAO = [
   'repetir',
   'link',
   'foco',
+  'prioridade',
   'estado',
 ];
 
@@ -269,6 +283,13 @@ function validarCampos(campos, { criacao = false } = {}) {
       saida.foco = false;
     } else if (typeof saida.foco !== 'boolean') {
       throw erro('invalido:foco');
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(saida, 'prioridade')) {
+    if (saida.prioridade == null && criacao) {
+      delete saida.prioridade;
+    } else if (!PRIORIDADES.includes(saida.prioridade)) {
+      throw erro('invalido:prioridade');
     }
   }
   if (Object.prototype.hasOwnProperty.call(saida, 'estado')) {
@@ -386,6 +407,7 @@ function criarNaLista(estado, campos, { dono, origem = 'eu' } = {}) {
     estado: c.estado || 'aberta',
     estado_desde: quandoAgora,
     foco: c.foco === true,
+    prioridade: c.prioridade || 'proximo',
     link: c.link || null,
     origem:
       c.ref_externa && String(c.ref_externa).startsWith('cf:')
@@ -620,9 +642,10 @@ export class RepositorioLocal {
         tarefas: valor.tarefas,
         eventos: Array.isArray(valor.eventos) ? valor.eventos : [],
         seq: Number(valor.seq) || 0,
+        notas: valor.notas && typeof valor.notas === 'object' ? valor.notas : {},
       };
     }
-    return { tarefas: [], eventos: [], seq: 0 };
+    return { tarefas: [], eventos: [], seq: 0, notas: {} };
   }
 
   _salvar() {
@@ -679,6 +702,23 @@ export class RepositorioLocal {
 
   async carregar() {
     return ordenarTarefas(this.estado.tarefas).slice(0, LIMITE_LISTA).map(clone);
+  }
+
+  async notas() {
+    return clone(this.estado.notas || {});
+  }
+
+  async salvarNota(area, texto) {
+    validarNota(area, texto);
+    const notas = this.estado.notas || (this.estado.notas = {});
+    const atual = notas[area];
+    notas[area] = {
+      texto,
+      versao: Number((atual && atual.versao) || 0) + 1,
+      atualizada_em: agoraISO(),
+    };
+    this._salvar();
+    return clone(notas[area]);
   }
 
   async criar(campos) {
@@ -1233,7 +1273,7 @@ export class RepositorioSupabase {
     }
     try {
       const lista = normalizarLista(
-        await this._rpc('tf_listar', { p: { limite: LIMITE_LISTA } }),
+        await this._rpc('tf_listar', { p: this._filtroLista() }),
       );
       if (!this.fila.length) {
         this.tarefas = lista;
@@ -1262,7 +1302,7 @@ export class RepositorioSupabase {
     this.sincronizando = true;
     try {
       const lista = normalizarLista(
-        await this._rpc('tf_listar', { p: { limite: LIMITE_LISTA } }),
+        await this._rpc('tf_listar', { p: this._filtroLista() }),
       );
       if (!this.fila.length && !this.enviando) {
         this.tarefas = lista;
@@ -1460,6 +1500,11 @@ export class RepositorioSupabase {
         });
       case 'subApagar':
         return this._rpc('tf_sub_apagar', { p_id: item.id });
+      case 'nota':
+        return this._rpc('tf_nota_salvar', {
+          p_area: item.area,
+          p_texto: item.texto,
+        });
       default:
         return Promise.resolve(null);
     }
@@ -1564,6 +1609,57 @@ export class RepositorioSupabase {
   }
 
   // ---------------------------------------------------------------- consulta
+
+  _filtroLista() {
+    return {
+      limite: LIMITE_LISTA,
+      estado: ['aberta', 'esperando', 'feita'],
+      feitas_desde: somarDias(hojeSP(), -DIAS_FEITAS),
+    };
+  }
+
+  // ------------------------------------------------------------------- notas
+
+  _lerNotasCache() {
+    return lerJSON(this.arm, CHAVE_NOTAS, {}) || {};
+  }
+
+  async notas() {
+    const cache = this._lerNotasCache();
+    const pendentes = new Set(
+      this.fila.filter((i) => i.tipo === 'nota').map((i) => i.area),
+    );
+    if (!this.sessao) return cache;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return cache;
+    try {
+      const remoto = (await this._rpc('tf_notas', {})) || {};
+      // O que ainda está na fila vale mais que o servidor.
+      for (const area of pendentes) {
+        if (cache[area]) remoto[area] = cache[area];
+      }
+      gravarJSON(this.arm, CHAVE_NOTAS, remoto);
+      return clone(remoto);
+    } catch (e) {
+      if (!e || !e.rede) throw e;
+      return cache;
+    }
+  }
+
+  async salvarNota(area, texto) {
+    validarNota(area, texto);
+    const cache = this._lerNotasCache();
+    const atual = cache[area];
+    cache[area] = {
+      texto,
+      versao: Number((atual && atual.versao) || 0) + 1,
+      atualizada_em: agoraISO(),
+    };
+    gravarJSON(this.arm, CHAVE_NOTAS, cache);
+    // Só a última versão de cada caixa precisa subir.
+    this.fila = this.fila.filter((i) => !(i.tipo === 'nota' && i.area === area));
+    this._enfileirar({ tipo: 'nota', area, texto });
+    return clone(cache[area]);
+  }
 
   async eventos(id) {
     const dados = await this._rpc('tf_eventos', { p_tarefa: id });

@@ -8,8 +8,9 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1916" media="(prefers-color-scheme: dark)" />
+    <link rel="preload" href="./fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin />
     <title>Tarefas</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icone.svg" type="image/svg+xml" />
@@ -17,7 +18,7 @@
     <link rel="stylesheet" href="./css/app.css" />
   </head>
   <body>
-    <div id="faixa-local" class="faixa" hidden>modo local — sem sincronizar</div>
+    <div id="faixa-local" class="aviso-local" hidden>modo local — sem sincronizar</div>
 
     <section id="tela-login" class="tela-centro" hidden>
       <h1 class="marca">Tarefas</h1>
@@ -73,47 +74,45 @@
       <button id="btn-sair-sem-acesso" class="botao" type="button">Sair</button>
     </section>
 
-    <div id="tela-app" hidden>
-      <header class="topo">
-        <div class="topo-linha">
+    <div id="tela-app" class="caderno" data-caixa="tudo" hidden>
+      <header class="cab">
+        <div class="cab-linha">
           <p id="data-hoje" class="data-hoje"></p>
-          <div class="topo-acoes">
+          <div class="cab-acoes">
             <button id="btn-busca" class="icone" type="button" aria-label="Buscar"></button>
             <button id="btn-ajustes" class="icone" type="button" aria-label="Ajustes"></button>
           </div>
         </div>
-        <nav id="areas" class="areas" aria-label="Áreas"></nav>
+        <nav id="abas" class="abas" aria-label="Caixas"></nav>
+        <div class="cab-titulo">
+          <h1 id="nome-caixa" class="nome-caixa">Tudo</h1>
+          <div id="modos" class="modos" role="tablist" aria-label="O que ver"></div>
+        </div>
         <div id="busca-caixa" class="busca" hidden>
           <input
             id="busca"
             type="search"
-            placeholder="Buscar"
+            placeholder="Buscar nesta caixa"
             aria-label="Buscar tarefas"
             autocomplete="off"
           />
         </div>
       </header>
 
-      <main class="conteudo">
-        <form id="form-criar" class="criar" autocomplete="off">
-          <div class="criar-campo">
-            <input
-              id="nova-tarefa"
-              type="text"
-              placeholder="Nova tarefa"
-              aria-label="Nova tarefa"
-              maxlength="1000"
-              enterkeyhint="done"
-            />
-            <button class="criar-botao" type="submit" aria-label="Criar tarefa">+</button>
-          </div>
-          <div id="previa" class="previa" aria-live="polite" hidden></div>
-        </form>
-
+      <main id="folha" class="folha">
         <div id="lista" class="lista"></div>
-        <p id="vazio" class="vazio" hidden>Nada para hoje.</p>
+        <section id="notas" class="notas" hidden></section>
+        <section id="feitas" class="feitas" hidden></section>
       </main>
+
+      <button id="btn-nova" class="btn-nova" type="button" aria-label="Nova tarefa"></button>
     </div>
+
+    <div id="nova-fundo" class="fundo" hidden></div>
+    <section id="nova" class="folha-nova" aria-label="Nova tarefa" hidden></section>
+
+    <div id="data-fundo" class="fundo" hidden></div>
+    <section id="escolher-data" class="folha-nova folha-data" aria-label="Escolher data" hidden></section>
 
     <div id="detalhes-fundo" class="fundo" hidden></div>
     <aside id="detalhes" class="painel painel-detalhes" aria-label="Detalhes da tarefa" hidden></aside>

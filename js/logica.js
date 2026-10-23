@@ -460,6 +460,113 @@ export function agrupar(tarefas, hoje) {
 }
 
 // ---------------------------------------------------------------------------
+// Caderno (v2): faixas por prioridade dentro de cada caixa
+
+export const PRIORIDADES = ['imediato', 'proximo', 'em_breve'];
+
+export const FAIXAS = ['com_data', 'imediato', 'proximo', 'em_breve', 'esperando'];
+
+export const ROTULOS_FAIXA = {
+  com_data: 'Com data',
+  imediato: 'Imediato',
+  proximo: 'Próximo',
+  em_breve: 'Em breve',
+  esperando: 'Esperando',
+};
+
+function porCriacao(a, b) {
+  const ca = a.criada_em || '';
+  const cb = b.criada_em || '';
+  if (ca === cb) return 0;
+  return ca < cb ? -1 : 1;
+}
+
+/** Faixa em que uma tarefa aberta/esperando aparece. */
+export function faixaDe(tarefa) {
+  if (!tarefa) return null;
+  if (tarefa.estado === 'esperando') return 'esperando';
+  if (tarefa.estado !== 'aberta') return null;
+  if (normalizarData(tarefa.quando)) return 'com_data';
+  return PRIORIDADES.includes(tarefa.prioridade) ? tarefa.prioridade : 'proximo';
+}
+
+/**
+ * Organiza as tarefas abertas em faixas, sempre na ordem de FAIXAS (inclusive vazias):
+ * [{ chave, titulo, tarefas }]. "Com data" vem por data e hora, com `atraso_dias`;
+ * as outras, por ordem de criação. "Esperando" traz `dias` desde estado_desde.
+ */
+export function organizarCaixa(tarefas, hoje) {
+  const h = normalizarData(hoje) || hojeSP();
+  const faixas = Object.fromEntries(FAIXAS.map((f) => [f, []]));
+  for (const t of Array.isArray(tarefas) ? tarefas : []) {
+    const faixa = faixaDe(t);
+    if (!faixa) continue;
+    const tarefa = { ...t, subtarefas: subtarefasDe(t) };
+    if (faixa === 'com_data') {
+      const quando = normalizarData(t.quando);
+      tarefa.atraso_dias = quando < h ? diferencaDias(h, quando) : 0;
+    }
+    if (faixa === 'esperando') {
+      const desde =
+        dataSP(t.estado_desde) || dataSP(t.atualizada_em) || dataSP(t.criada_em);
+      tarefa.dias = desde ? Math.max(0, diferencaDias(h, desde) || 0) : 0;
+    }
+    faixas[faixa].push(tarefa);
+  }
+  faixas.com_data.sort((a, b) => {
+    const qa = normalizarData(a.quando);
+    const qb = normalizarData(b.quando);
+    if (qa !== qb) return qa < qb ? -1 : 1;
+    return compararTarefas(a, b);
+  });
+  for (const f of ['imediato', 'proximo', 'em_breve', 'esperando']) {
+    faixas[f].sort(porCriacao);
+  }
+  return FAIXAS.map((chave) => ({
+    chave,
+    titulo: ROTULOS_FAIXA[chave],
+    tarefas: faixas[chave],
+  }));
+}
+
+/** Campos para mover uma tarefa para outra faixa (a data é tratada à parte). */
+export function camposParaFaixa(tarefa, faixa) {
+  if (faixa === 'esperando') return { estado: 'esperando' };
+  if (!PRIORIDADES.includes(faixa)) return null;
+  const campos = { prioridade: faixa };
+  if (tarefa && tarefa.estado === 'esperando') campos.estado = 'aberta';
+  if (tarefa && normalizarData(tarefa.quando)) {
+    campos.quando = null;
+    campos.hora = null;
+    if (tarefa.repetir) campos.repetir = null;
+  }
+  return campos;
+}
+
+/** Feitas agrupadas por dia (mais recente primeiro): [{ data, rotulo, tarefas }]. */
+export function feitasPorDia(tarefas, hoje) {
+  const h = normalizarData(hoje) || hojeSP();
+  const ontem = somarDias(h, -1);
+  const dias = new Map();
+  for (const t of Array.isArray(tarefas) ? tarefas : []) {
+    if (!t || t.estado !== 'feita') continue;
+    const dia = dataSP(t.feita_em);
+    if (!dia) continue;
+    if (!dias.has(dia)) dias.set(dia, []);
+    dias.get(dia).push(t);
+  }
+  return [...dias.keys()]
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((dia) => ({
+      data: dia,
+      rotulo: dia === h ? 'Hoje' : dia === ontem ? 'Ontem' : dataPorExtenso(dia),
+      tarefas: dias
+        .get(dia)
+        .sort((a, b) => String(b.feita_em).localeCompare(String(a.feita_em))),
+    }));
+}
+
+// ---------------------------------------------------------------------------
 // Utilitários de apresentação
 
 /** 'hoje' | 'amanhã' | 'sex' | '30/10' */

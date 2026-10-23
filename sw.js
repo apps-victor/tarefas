@@ -4,7 +4,7 @@
 // - requisições ao Supabase e URLs com ?code= nunca são cacheadas
 
 // Ao publicar mudanças nos arquivos, suba a versão (v8, v9…).
-const VERSAO = '799dbee';
+const VERSAO = '440cce3';
 const CACHE = `tarefas-${VERSAO}`;
 
 const ESTATICOS = [
@@ -18,11 +18,15 @@ const ESTATICOS = [
   './js/logica.js',
   './js/parser.js',
   './js/ui/ajustes.js',
-  './js/ui/criar.js',
+  './js/ui/feitas.js',
   './js/ui/detalhes.js',
   './js/ui/dom.js',
   './js/ui/icones.js',
   './js/ui/lista.js',
+  './js/ui/notas.js',
+  './js/ui/nova.js',
+  './fonts/fraunces.woff2',
+  './fonts/fraunces-italico.woff2',
   './icons/icone.svg',
   './icons/icone-192.png',
   './icons/icone-512.png',

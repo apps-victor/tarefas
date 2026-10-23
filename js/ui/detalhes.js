@@ -1,6 +1,13 @@
 // Folha/painel de detalhes da tarefa.
 
-import { AREAS, ROTULOS_AREA, diaSemana, hojeSP } from '../logica.js';
+import {
+  AREAS,
+  PRIORIDADES,
+  ROTULOS_AREA,
+  ROTULOS_FAIXA,
+  diaSemana,
+  hojeSP,
+} from '../logica.js';
 import { h, limpar } from './dom.js';
 import { icone } from './icones.js';
 
@@ -40,6 +47,7 @@ export function criarDetalhes({
   aoArquivar,
   aoReabrir,
   aoEventos,
+  comVoltar = () => () => {},
 }) {
   const painel = document.getElementById('detalhes');
   const fundo = document.getElementById('detalhes-fundo');
@@ -51,6 +59,7 @@ export function criarDetalhes({
   let carregandoEventos = false;
   let personalizado = null;
   let statusTexto = '';
+  let soltarVoltar = null;
 
   // Edições em campos diferentes acontecem em sequência (blur após blur).
   // A fila evita que a segunda use uma versão já vencida pela primeira.
@@ -77,6 +86,11 @@ export function criarDetalhes({
     fundo.hidden = true;
     document.body.classList.remove('painel-aberto');
     limpar(painel);
+    if (soltarVoltar) {
+      const soltar = soltarVoltar;
+      soltarVoltar = null;
+      soltar();
+    }
   }
 
   function aplicarTarefa(nova) {
@@ -244,20 +258,43 @@ export function criarDetalhes({
     return entrada;
   }
 
-  function campoArea(tarefa) {
-    const selecao = h('select', { class: 'entrada', 'aria-label': 'Área' });
-    for (const area of AREAS) {
-      const opcao = h('option', {
-        value: area,
-        text: ROTULOS_AREA[area],
+  function chips(opcoes, ativo, aoEscolher, rotulo) {
+    const grupo = h('div', { class: 'opcoes', role: 'group', 'aria-label': rotulo });
+    for (const opcao of opcoes) {
+      const botao = h('button', {
+        class: `chip${opcao.classe ? ` ${opcao.classe}` : ''}${opcao.valor === ativo ? ' ativo' : ''}`,
+        type: 'button',
+        'aria-pressed': opcao.valor === ativo ? 'true' : 'false',
+        text: opcao.rotulo,
       });
-      selecao.appendChild(opcao);
+      botao.addEventListener('click', () => {
+        if (opcao.valor !== ativo) aoEscolher(opcao.valor);
+      });
+      grupo.appendChild(botao);
     }
-    selecao.value = tarefa.area || 'pessoal';
-    selecao.addEventListener('change', () => {
-      salvar({ area: selecao.value });
-    });
-    return selecao;
+    return grupo;
+  }
+
+  function campoArea(tarefa) {
+    return chips(
+      AREAS.map((area) => ({
+        valor: area,
+        rotulo: ROTULOS_AREA[area],
+        classe: `chip-caixa tinta-${area}`,
+      })),
+      tarefa.area || 'pessoal',
+      (area) => salvar({ area }, { rerender: true }),
+      'Caixa',
+    );
+  }
+
+  function campoFaixa(tarefa) {
+    return chips(
+      PRIORIDADES.map((p) => ({ valor: p, rotulo: ROTULOS_FAIXA[p] })),
+      tarefa.prioridade || 'proximo',
+      (prioridade) => salvar({ prioridade }, { rerender: true }),
+      'Faixa',
+    );
   }
 
   function campoRepetir(tarefa) {
@@ -496,8 +533,25 @@ export function criarDetalhes({
     cabecalho.appendChild(fecharBotao);
     painel.appendChild(cabecalho);
 
+    painel.dataset.caixa = tarefa.area || 'pessoal';
     painel.appendChild(campoTitulo(tarefa));
     painel.appendChild(campoNotas(tarefa));
+
+    painel.appendChild(
+      h('div', { class: 'campo' }, [
+        h('span', { class: 'campo-rotulo', text: 'Caixa' }),
+        campoArea(tarefa),
+      ]),
+    );
+    painel.appendChild(
+      h('div', { class: 'campo' }, [
+        h('span', {
+          class: 'campo-rotulo',
+          text: tarefa.quando ? 'Faixa (vale quando tirar a data)' : 'Faixa',
+        }),
+        campoFaixa(tarefa),
+      ]),
+    );
 
     const linhaData = h('div', { class: 'linha-campos' });
     linhaData.appendChild(
@@ -516,12 +570,6 @@ export function criarDetalhes({
 
     painel.appendChild(
       h('label', { class: 'campo' }, [
-        h('span', { class: 'campo-rotulo', text: 'Área' }),
-        campoArea(tarefa),
-      ]),
-    );
-    painel.appendChild(
-      h('label', { class: 'campo' }, [
         h('span', { class: 'campo-rotulo', text: 'Repetir' }),
         campoRepetir(tarefa),
       ]),
@@ -534,7 +582,7 @@ export function criarDetalhes({
     );
 
     painel.appendChild(
-      h('h3', { class: 'secao-titulo', text: 'Subtarefas' }),
+      h('h3', { class: 'secao-titulo', text: 'Passos' }),
     );
     painel.appendChild(blocoSubtarefas(tarefa));
 
@@ -610,8 +658,14 @@ export function criarDetalhes({
     painel.hidden = false;
     fundo.hidden = false;
     document.body.classList.add('painel-aberto');
+    if (!soltarVoltar) {
+      soltarVoltar = comVoltar(() => {
+        soltarVoltar = null;
+        fechar();
+      });
+    }
     const titulo = painel.querySelector('.entrada-titulo');
-    if (titulo) titulo.focus();
+    if (titulo && window.matchMedia('(pointer: fine)').matches) titulo.focus();
   }
 
   fundo.addEventListener('click', fechar);
