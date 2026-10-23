@@ -419,6 +419,21 @@ export function organizarCaixa(tarefas, hoje) {
   }));
 }
 
+/**
+ * Separa "Com data" entre o que é dos próximos `dias` (atrasadas inclusive) e o que fica
+ * mais adiante, para a faixa não virar uma agenda: { perto, adiante }.
+ */
+export function dividirComData(tarefas, hoje, dias = 3) {
+  const limite = somarDias(normalizarData(hoje) || hojeSP(), dias);
+  const perto = [];
+  const adiante = [];
+  for (const t of Array.isArray(tarefas) ? tarefas : []) {
+    const quando = normalizarData(t.quando);
+    (quando && quando > limite ? adiante : perto).push(t);
+  }
+  return { perto, adiante };
+}
+
 /** Campos para mover uma tarefa para outra faixa (a data é tratada à parte). */
 export function camposParaFaixa(tarefa, faixa) {
   if (faixa === 'esperando') return { estado: 'esperando' };

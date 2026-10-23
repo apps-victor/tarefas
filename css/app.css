@@ -497,6 +497,26 @@ body.arrastando .aba:not([data-aba='tudo']) {
   color: var(--tinta);
 }
 
+.faixa-adiante {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 0 8px 56px;
+  border: 0;
+  border-bottom: 1px solid var(--pauta);
+  background: none;
+  text-align: left;
+  font-family: var(--serifa);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--lapis-claro);
+  cursor: pointer;
+}
+
+.faixa-adiante:hover {
+  color: var(--tinta);
+}
+
 .faixa-vazia {
   margin: 0;
   min-height: 40px;

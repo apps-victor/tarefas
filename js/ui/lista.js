@@ -9,6 +9,7 @@ import {
   progresso,
   rotuloData,
   dominio,
+  dividirComData,
 } from '../logica.js';
 import { h, limpar } from './dom.js';
 import { icone } from './icones.js';
@@ -62,6 +63,7 @@ export function criarLista({
 }) {
   const raiz = document.getElementById('lista');
   const recolhidas = new Set(['esperando']);
+  let comDataAberta = false;
   let ultimo = null;
   let pendente = null;
   let animando = 0;
@@ -566,8 +568,27 @@ export function criarLista({
       bloco.appendChild(cabecalhoFaixa(faixa, contexto));
       const lista = h('div', { class: 'faixa-lista', role: 'list' });
       if (!recolhidas.has(faixa.chave)) {
-        for (const tarefa of faixa.tarefas) {
+        // "Com data" mostra só os próximos dias; o resto fica atrás de um toque.
+        const { perto, adiante } =
+          faixa.chave === 'com_data' && !buscando
+            ? dividirComData(faixa.tarefas, contexto.hoje)
+            : { perto: faixa.tarefas, adiante: [] };
+        const visiveis = comDataAberta ? faixa.tarefas : perto;
+        for (const tarefa of visiveis) {
           lista.appendChild(criarLinha(tarefa, contexto));
+        }
+        if (adiante.length) {
+          const botao = h('button', {
+            class: 'faixa-adiante',
+            type: 'button',
+            'aria-expanded': String(comDataAberta),
+            text: comDataAberta ? 'mostrar só os próximos dias' : `mais ${adiante.length} adiante`,
+          });
+          botao.addEventListener('click', () => {
+            comDataAberta = !comDataAberta;
+            renderInterno();
+          });
+          lista.appendChild(botao);
         }
         if (!faixa.tarefas.length) {
           lista.appendChild(
