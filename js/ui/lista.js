@@ -68,6 +68,7 @@ export function criarLista({
   let pendente = null;
   let animando = 0;
   let arrasto = null;
+  let toque = null; // gesto pendente (o timer dos 380 ms do toque longo)
   let destacarId = null;
   // Tarefa que acabou de ser anotada: fica sem título até a escrita começar,
   // para não aparecer pronta e depois "piscar" ao ser escrita.
@@ -306,8 +307,17 @@ export function criarLista({
     arrasto.raf = requestAnimationFrame(rolarSozinho);
   }
 
-  function iniciarArrasto(linha, tarefa, x, y) {
+  function limparToque() {
+    if (toque && toque.timer) clearTimeout(toque.timer);
+    toque = null;
+  }
+
+  function iniciarArrasto(linha, tarefa, x, y, pointerId) {
+    // A linha pode ter saído da lista entre o toque e o timer (Realtime, troca
+    // de aba...). Clonar uma linha solta daria um fantasma de largura zero.
+    if (!linha.isConnected) return;
     const caixa = linha.getBoundingClientRect();
+    if (caixa.width < 8 || caixa.height < 8) return;
     const fantasma = linha.cloneNode(true);
     fantasma.classList.add('fantasma');
     fantasma.style.width = `${caixa.width}px`;
@@ -320,6 +330,7 @@ export function criarLista({
       tarefa,
       linha,
       fantasma,
+      pointerId,
       dy: y - caixa.top,
       x,
       y,
@@ -331,6 +342,7 @@ export function criarLista({
   }
 
   function moverArrasto(x, y) {
+    if (!arrasto) return;
     arrasto.x = x;
     arrasto.y = y;
     arrasto.fantasma.style.top = `${y - arrasto.dy}px`;
@@ -339,6 +351,7 @@ export function criarLista({
 
   function terminarArrasto(soltou) {
     const atual = arrasto;
+    if (!atual) return;
     arrasto = null;
     cancelAnimationFrame(atual.raf);
     document.body.classList.remove('arrastando');
@@ -367,36 +380,45 @@ export function criarLista({
     }
   }
 
+  // Qualquer soltura encerra o gesto, mesmo fora da linha: o dedo pode sair da
+  // tela ou a linha pode ser redesenhada no meio do toque.
+  function soltarToque(evento, soltou) {
+    if (arrasto) {
+      if (evento && evento.pointerId !== arrasto.pointerId) return;
+      limparToque();
+      terminarArrasto(soltou);
+      return;
+    }
+    if (toque && (!evento || evento.pointerId === toque.id)) limparToque();
+  }
+
   function ligarArrasto(linha, tarefa) {
-    let toque = null;
-
-    const limpar = () => {
-      if (toque && toque.timer) clearTimeout(toque.timer);
-      toque = null;
-    };
-
     linha.addEventListener('contextmenu', (evento) => evento.preventDefault());
 
     linha.addEventListener('pointerdown', (evento) => {
       if (evento.pointerType === 'mouse' && evento.button !== 0) return;
       if (evento.target.closest('.circulo, .menu-botao, a')) return;
       if (linha.classList.contains('concluindo')) return;
-      toque = {
+      limparToque();
+      const inicio = {
         id: evento.pointerId,
+        linha,
         x: evento.clientX,
         y: evento.clientY,
         mouse: evento.pointerType === 'mouse',
         timer: null,
       };
-      if (!toque.mouse) {
-        toque.timer = setTimeout(() => {
-          if (!toque) return;
+      toque = inicio;
+      if (!inicio.mouse) {
+        inicio.timer = setTimeout(() => {
+          if (toque !== inicio) return;
+          limparToque();
           try {
-            linha.setPointerCapture(toque.id);
+            linha.setPointerCapture(inicio.id);
           } catch {
             // ignora
           }
-          iniciarArrasto(linha, tarefa, toque.x, toque.y);
+          iniciarArrasto(linha, tarefa, inicio.x, inicio.y, inicio.id);
         }, ESPERA_TOQUE);
       }
     });
@@ -406,32 +428,34 @@ export function criarLista({
         moverArrasto(evento.clientX, evento.clientY);
         return;
       }
-      if (!toque) return;
+      if (!toque || toque.linha !== linha) return;
       const dist = Math.hypot(evento.clientX - toque.x, evento.clientY - toque.y);
       if (toque.mouse && dist > 6) {
+        const inicio = toque;
+        limparToque();
         try {
-          linha.setPointerCapture(toque.id);
+          linha.setPointerCapture(inicio.id);
         } catch {
           // ignora
         }
-        iniciarArrasto(linha, tarefa, toque.x, toque.y);
+        iniciarArrasto(linha, tarefa, inicio.x, inicio.y, inicio.id);
         moverArrasto(evento.clientX, evento.clientY);
-        if (toque.timer) clearTimeout(toque.timer);
-        toque = null;
       } else if (!toque.mouse && dist > 8) {
-        limpar(); // é rolagem, não arrasto
+        limparToque(); // é rolagem, não arrasto
       }
     });
-
-    linha.addEventListener('pointerup', () => {
-      limpar();
-      if (arrasto && arrasto.linha === linha) terminarArrasto(true);
-    });
-    linha.addEventListener('pointercancel', () => {
-      limpar();
-      if (arrasto && arrasto.linha === linha) terminarArrasto(false);
-    });
   }
+
+  document.addEventListener('pointerup', (evento) => soltarToque(evento, true), true);
+  document.addEventListener('pointercancel', (evento) => soltarToque(evento, false), true);
+
+  // Trocar de app/aba no meio de um arrasto não dispara pointerup em todos os
+  // Androids; sem isso o clone ficaria no <body> para sempre.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) soltarToque(null, false);
+  });
+  window.addEventListener('pagehide', () => soltarToque(null, false));
+  window.addEventListener('blur', () => soltarToque(null, false));
 
   // Enquanto uma tarefa está erguida, o dedo não rola a página.
   document.addEventListener(
@@ -552,6 +576,16 @@ export function criarLista({
 
   function renderInterno() {
     if (!ultimo) return;
+    // Redesenho durante um arrasto ativo é adiado; o clone ainda está em uso.
+    if (arrasto) {
+      if (!pendente) pendente = ultimo;
+      return;
+    }
+    // O timer do toque longo não pode sobreviver à troca das linhas: ele
+    // clonaria uma linha que já saiu do DOM, com largura zero.
+    limparToque();
+    // Rede de segurança para qualquer clone antigo que tenha escapado.
+    for (const fantasma of document.querySelectorAll('.fantasma')) fantasma.remove();
     const { faixas, contexto } = ultimo;
     limpar(raiz);
     const buscando = Boolean(contexto.busca);
@@ -619,6 +653,9 @@ export function criarLista({
           contexto.iaRecentes instanceof Set ? contexto.iaRecentes : new Set(),
       },
     };
+    // Se a linha do arrasto saiu da lista por algum caminho, não deixa o gesto
+    // preso (e a lista congelada) para sempre.
+    if (arrasto && !arrasto.linha.isConnected) soltarToque(null, false);
     // Durante a animação de concluir, a lista não é redesenhada (senão a linha
     // sumiria no meio do traço); o último pedido é aplicado no fim.
     if (animando || arrasto) {

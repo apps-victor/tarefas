@@ -25,6 +25,7 @@ export function criarAjustes({
   aoListarIa,
   aoDesfazerIa,
   aoExportar,
+  aoAtualizar,
   obterEmail,
   modoLocal,
   comVoltar = () => () => {},
@@ -85,6 +86,32 @@ export function criarAjustes({
         await aoSair();
       });
       painel.appendChild(sair);
+    }
+
+    if (typeof aoAtualizar === 'function') {
+      painel.appendChild(h('h3', { class: 'secao-titulo', text: 'App' }));
+      painel.appendChild(
+        h('p', {
+          class: 'suave',
+          text: 'Recarrega a versão publicada mais recente.',
+        }),
+      );
+      const atualizar = h('button', {
+        class: 'botao',
+        type: 'button',
+        text: 'Atualizar app',
+      });
+      atualizar.addEventListener('click', async () => {
+        atualizar.disabled = true;
+        atualizar.textContent = 'Atualizando…';
+        try {
+          await aoAtualizar();
+        } catch {
+          atualizar.disabled = false;
+          atualizar.textContent = 'Atualizar app';
+        }
+      });
+      painel.appendChild(atualizar);
     }
 
     painel.appendChild(

@@ -727,6 +727,51 @@ async function listarMudancasIa() {
   }
 }
 
+// Recarrega a versão publicada. Antes, pede ao service worker para buscar e
+// ativar a versão nova (o sw.js faz skipWaiting), senão o reload poderia
+// devolver o js/css antigos do cache.
+async function atualizarApp() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registro = await navigator.serviceWorker.getRegistration();
+      if (registro) {
+        try {
+          await Promise.race([
+            registro.update(),
+            new Promise((ok) => setTimeout(ok, 4000)),
+          ]);
+        } catch {
+          // sem rede: recarrega o que estiver em cache
+        }
+        const inicio = Date.now();
+        let viu = false;
+        let pediu = false;
+        while (Date.now() - inicio < 6000) {
+          const novo = registro.installing || registro.waiting;
+          if (novo) {
+            viu = true;
+            if (novo.state === 'activated' || novo.state === 'redundant') break;
+            if (novo === registro.waiting && !pediu) {
+              pediu = true;
+              novo.postMessage('pular-espera');
+            }
+          } else if (viu || Date.now() - inicio > 1200) {
+            break;
+          }
+          await new Promise((ok) => setTimeout(ok, 100));
+        }
+        if (registro.waiting) {
+          registro.waiting.postMessage('pular-espera');
+          await new Promise((ok) => setTimeout(ok, 300));
+        }
+      }
+    } catch {
+      // segue para o reload normal
+    }
+  }
+  location.reload();
+}
+
 const ajustes = criarAjustes({
   modoLocal,
   obterEmail: () => {
@@ -748,6 +793,7 @@ const ajustes = criarAjustes({
       throw e;
     }
   },
+  aoAtualizar: atualizarApp,
   aoExportar: () => {
     try {
       const dadosJson = JSON.stringify(dados.exportar(), null, 2);
