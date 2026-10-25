@@ -2,13 +2,14 @@
 // Datas são strings 'AAAA-MM-DD' no fuso local (America/Sao_Paulo).
 // Cálculos de calendário usam UTC para não depender do fuso do aparelho.
 
-export const AREAS = ['casa', 'lapig', 'buriti', 'pessoal'];
+export const AREAS = ['pessoal', 'casa', 'lapig', 'buriti', 'ia'];
 
 export const ROTULOS_AREA = {
   casa: 'Casa',
   lapig: 'LAPIG',
   buriti: 'Buriti',
   pessoal: 'Pessoal',
+  ia: 'IA',
 };
 
 export const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];

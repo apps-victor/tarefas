@@ -52,6 +52,7 @@ export function liberarPainel() {
 
 export function rotuloArea(area) {
   if (area === 'lapig') return 'LAPIG';
+  if (area === 'ia') return 'IA';
   if (!area) return 'Pessoal';
   return area.charAt(0).toUpperCase() + area.slice(1);
 }

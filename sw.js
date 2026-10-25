@@ -6,7 +6,7 @@
 // - o login é por e-mail + código (OTP), não por link
 
 // Ao publicar mudanças nos arquivos, suba a versão (v8, v9…).
-const VERSAO = '6fd63b7';
+const VERSAO = 'fef3e3d';
 const LIMITE_REDE = 2500;
 const CACHE = `tarefas-${VERSAO}`;
 

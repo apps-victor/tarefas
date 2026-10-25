@@ -23,7 +23,7 @@ const CHAVE_MEMBRO = 'tarefas.membro.v1';
 const CHAVE_DONO = 'tarefas.dono.v1';
 const CHAVE_NOTAS = 'tarefas.notas.v1';
 
-const AREAS = ['casa', 'lapig', 'buriti', 'pessoal'];
+const AREAS = ['pessoal', 'casa', 'lapig', 'buriti', 'ia'];
 const PRIORIDADES = ['imediato', 'proximo', 'em_breve'];
 const LIMITE_LISTA = 500;
 // Feitas mais antigas que isso não vêm do servidor (a tela de Feitas mostra este período).

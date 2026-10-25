@@ -163,7 +163,7 @@ export function interpretar(texto, hoje) {
   // ------------------------------------------------------------------ área
   let area = null;
   const areas = [];
-  varrer(/#(casa|lapig|buriti|pessoal)\b/g, (m, ini, fim) => {
+  varrer(/#(casa|lapig|buriti|pessoal|ia)\b/g, (m, ini, fim) => {
     areas.push({ area: m[1], ini, fim });
   });
   if (areas.length) {
