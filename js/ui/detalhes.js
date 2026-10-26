@@ -1,13 +1,14 @@
 // Folha/painel de detalhes da tarefa.
 
 import {
-  AREAS,
   PRIORIDADES,
-  ROTULOS_AREA,
   ROTULOS_FAIXA,
+  caixasOrdenadas,
   diaSemana,
   hojeSP,
   progresso,
+  rotuloCaixa,
+  tintaCaixa,
 } from '../logica.js';
 import {
   h,
@@ -53,6 +54,7 @@ export function criarDetalhes({
   aoArquivar,
   aoReabrir,
   aoEventos,
+  obterCaixas = () => [],
   comVoltar = () => () => {},
 }) {
   const painel = document.getElementById('detalhes');
@@ -341,13 +343,24 @@ export function criarDetalhes({
   }
 
   function campoArea(tarefa) {
+    const caixas = caixasOrdenadas(obterCaixas());
+    const opcoes = caixas.map((caixa) => ({
+      valor: caixa.chave,
+      rotulo: caixa.nome,
+      classe: `chip-caixa tinta-${tintaCaixa(caixas, caixa.chave)}`,
+    }));
+    // Área que veio de um cache antigo e já não existe: mostra como está para
+    // o usuário poder mover a tarefa de volta para uma caixa existente.
+    if (tarefa.area && !caixas.some((caixa) => caixa.chave === tarefa.area)) {
+      opcoes.unshift({
+        valor: tarefa.area,
+        rotulo: rotuloCaixa(caixas, tarefa.area),
+        classe: 'chip-caixa tinta-ardosia',
+      });
+    }
     return chips(
-      AREAS.map((area) => ({
-        valor: area,
-        rotulo: ROTULOS_AREA[area],
-        classe: `chip-caixa tinta-${area}`,
-      })),
-      tarefa.area || 'pessoal',
+      opcoes,
+      tarefa.area || (caixas[0] && caixas[0].chave) || 'pessoal',
       (area) => salvar({ area }, { rerender: true }),
       'Caixa',
     );
@@ -615,7 +628,10 @@ export function criarDetalhes({
     cabecalho.appendChild(fecharBotao);
     painel.appendChild(cabecalho);
 
-    painel.dataset.caixa = tarefa.area || 'pessoal';
+    painel.className = `painel painel-detalhes tinta-${tintaCaixa(
+      obterCaixas(),
+      tarefa.area,
+    )}`;
     painel.appendChild(campoTitulo(tarefa));
     painel.appendChild(campoNotas(tarefa));
 

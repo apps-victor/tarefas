@@ -2,17 +2,19 @@
 
 import { dados, modoLocal } from './dados.js';
 import {
-  AREAS,
-  ROTULOS_AREA,
   ROTULOS_FAIXA,
   camposParaFaixa,
+  caixaLembrada,
+  caixasOrdenadas,
   dataPorExtenso,
   ehExterna,
   faixaDe,
   hojeSP,
   organizarCaixa,
+  rotuloCaixa,
   rotuloCurto,
   semAcento,
+  tintaCaixa,
 } from './logica.js';
 import { criarLista } from './ui/lista.js';
 import { criarNova, criarEscolherData } from './ui/nova.js';
@@ -23,7 +25,6 @@ import { criarAjustes } from './ui/ajustes.js';
 import { h, limpar } from './ui/dom.js';
 import { icone } from './ui/icones.js';
 
-const CAIXAS = ['tudo', ...AREAS];
 const MODOS = [
   { chave: 'tarefas', rotulo: 'Tarefas' },
   { chave: 'notas', rotulo: 'Notas' },
@@ -32,8 +33,9 @@ const MODOS = [
 
 const estado = {
   tarefas: [],
+  caixas: [],
   hoje: hojeSP(),
-  caixa: lerLembrado('tarefas.caixa.v2', CAIXAS, 'tudo'),
+  caixa: lerLembrado('tarefas.caixa.v2', 'tudo'),
   modo: 'tarefas',
   busca: '',
   iaRecentes: new Set(),
@@ -41,10 +43,25 @@ const estado = {
   membro: modoLocal ? 'dono' : null,
 };
 
-function lerLembrado(chave, aceitos, padrao) {
+/** 'tudo' + as chaves das caixas, na ordem do usuário. */
+function chavesDisponiveis() {
+  return ['tudo', ...caixasOrdenadas(estado.caixas).map((caixa) => caixa.chave)];
+}
+
+function tintaDaCaixa(chave) {
+  return chave === 'tudo' ? 'tudo' : tintaCaixa(estado.caixas, chave);
+}
+
+function assinaturaCaixas(lista) {
+  return (Array.isArray(lista) ? lista : [])
+    .map((caixa) => `${caixa.chave}:${caixa.nome}:${caixa.tinta}:${caixa.ordem}`)
+    .join('|');
+}
+
+function lerLembrado(chave, padrao) {
   try {
     const valor = localStorage.getItem(chave);
-    return valor && aceitos.includes(valor) ? valor : padrao;
+    return valor || padrao;
   } catch {
     return padrao;
   }
@@ -193,7 +210,7 @@ el.toastAcao.addEventListener('click', async () => {
 // Caixas (abas), modos e busca
 
 function trocarCaixa(caixa, { direcao = 0 } = {}) {
-  if (!CAIXAS.includes(caixa) || caixa === estado.caixa) return;
+  if (!chavesDisponiveis().includes(caixa) || caixa === estado.caixa) return;
   estado.caixa = caixa;
   lembrar('tarefas.caixa.v2', caixa);
   renderAreas();
@@ -224,25 +241,29 @@ function trocarModo(modo) {
 
 function renderAreas() {
   el.telaApp.dataset.caixa = estado.caixa;
+  el.telaApp.className = `caderno tinta-${tintaDaCaixa(estado.caixa)}`;
   el.telaApp.dataset.modo = estado.modo;
   el.nomeCaixa.textContent =
-    estado.caixa === 'tudo' ? 'Tudo' : ROTULOS_AREA[estado.caixa];
+    estado.caixa === 'tudo' ? 'Tudo' : rotuloCaixa(estado.caixas, estado.caixa);
 
+  const chaves = chavesDisponiveis();
   limpar(el.abas);
-  for (const caixa of CAIXAS) {
+  for (const caixa of chaves) {
     const ativa = estado.caixa === caixa;
     const aba = h('button', {
-      class: `aba tinta-${caixa}${ativa ? ' ativa' : ''}`,
+      class: `aba tinta-${tintaDaCaixa(caixa)}${ativa ? ' ativa' : ''}`,
       type: 'button',
       'aria-pressed': ativa ? 'true' : 'false',
       dataset: { aba: caixa },
     });
     aba.appendChild(
-      h('span', { text: caixa === 'tudo' ? 'Tudo' : ROTULOS_AREA[caixa] }),
+      h('span', {
+        text: caixa === 'tudo' ? 'Tudo' : rotuloCaixa(estado.caixas, caixa),
+      }),
     );
     aba.addEventListener('click', () => {
-      const de = CAIXAS.indexOf(estado.caixa);
-      trocarCaixa(caixa, { direcao: CAIXAS.indexOf(caixa) > de ? 1 : -1 });
+      const de = chaves.indexOf(estado.caixa);
+      trocarCaixa(caixa, { direcao: chaves.indexOf(caixa) > de ? 1 : -1 });
     });
     el.abas.appendChild(aba);
   }
@@ -318,8 +339,9 @@ el.busca.addEventListener('keydown', (evento) => {
       const rapido = Date.now() - inicio.em < 600;
       inicio = null;
       if (!rapido || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
-      const i = CAIXAS.indexOf(estado.caixa);
-      const proxima = dx < 0 ? CAIXAS[i + 1] : CAIXAS[i - 1];
+      const chaves = chavesDisponiveis();
+      const i = chaves.indexOf(estado.caixa);
+      const proxima = dx < 0 ? chaves[i + 1] : chaves[i - 1];
       if (proxima) trocarCaixa(proxima, { direcao: dx < 0 ? 1 : -1 });
     },
     { passive: true },
@@ -350,6 +372,7 @@ function renderTudo() {
   if (estado.modo === 'tarefas') {
     lista.render(organizarCaixa(daCaixa(estado.tarefas), estado.hoje), {
       caixa: estado.caixa,
+      caixas: estado.caixas,
       hoje: estado.hoje,
       busca: estado.busca.trim(),
       iaRecentes: estado.iaRecentes,
@@ -365,6 +388,21 @@ function renderTudo() {
 
 async function recarregar() {
   try {
+    const antesCaixas = assinaturaCaixas(estado.caixas);
+    try {
+      estado.caixas = await dados.caixas();
+    } catch (e) {
+      if (!e || !e.rede) throw e;
+      // offline: fica a lista do cache
+    }
+    if (assinaturaCaixas(estado.caixas) !== antesCaixas) {
+      // Nomes, tintas ou ordem mudaram: os blocos de notas precisam renascer.
+      delete el.notas.dataset.caixa;
+    }
+    const anterior = estado.caixa;
+    estado.caixa = caixaLembrada(estado.caixa, estado.caixas);
+    if (anterior !== estado.caixa) lembrar('tarefas.caixa.v2', estado.caixa);
+
     estado.tarefas = await dados.carregar();
     if (!modoLocal) {
       try {
@@ -374,6 +412,7 @@ async function recarregar() {
         // sem eventos agora; mantém o último mapa
       }
     }
+    renderAreas();
     renderTudo();
   } catch (e) {
     toast(mensagem(e));
@@ -498,7 +537,11 @@ async function mudarComDesfazer(tarefa, campos, texto) {
 
 async function moverTarefa(tarefa, { faixa, area }) {
   if (area) {
-    await mudarComDesfazer(tarefa, { area }, `Foi para ${ROTULOS_AREA[area]}`);
+    await mudarComDesfazer(
+      tarefa,
+      { area },
+      `Foi para ${rotuloCaixa(estado.caixas, area)}`,
+    );
     return;
   }
   if (faixa === 'com_data') {
@@ -601,7 +644,7 @@ function itemMenu(texto, aoClicar, classe = '') {
 
 function abrirMenu(tarefa) {
   limpar(el.menu);
-  el.menu.className = `menu tinta-${tarefa.area || 'pessoal'}`;
+  el.menu.className = `menu tinta-${tintaDaCaixa(tarefa.area)}`;
   el.menu.appendChild(h('p', { class: 'menu-titulo', text: tarefa.titulo }));
 
   const faixaAtual = faixaDe(tarefa);
@@ -619,12 +662,15 @@ function abrirMenu(tarefa) {
 
   el.menu.appendChild(h('p', { class: 'menu-secao', text: 'Caixa' }));
   const caixas = h('div', { class: 'menu-chips' });
-  for (const area of AREAS) {
+  for (const caixa of caixasOrdenadas(estado.caixas)) {
     caixas.appendChild(
       itemMenu(
-        ROTULOS_AREA[area],
-        () => (area === tarefa.area ? null : moverTarefa(tarefa, { area })),
-        `chip chip-caixa tinta-${area}${area === tarefa.area ? ' ativo' : ''}`,
+        caixa.nome,
+        () =>
+          caixa.chave === tarefa.area ? null : moverTarefa(tarefa, { area: caixa.chave }),
+        `chip chip-caixa tinta-${tintaCaixa(estado.caixas, caixa.chave)}${
+          caixa.chave === tarefa.area ? ' ativo' : ''
+        }`,
       ),
     );
   }
@@ -664,12 +710,14 @@ const lista = criarLista({
   aoNovaNaFaixa: (faixa, caixa) => nova.abrir({ faixa, caixa }),
   aoSubMarcar: (tarefaId, subId, feita) =>
     comSub(tarefaId, () => dados.subMarcar(subId, feita)),
+  obterCaixas: () => estado.caixas,
 });
 
 const nova = criarNova({
   aoCriar: criarTarefa,
   aoMostrar: mostrarCriada,
   obterHoje: () => estado.hoje,
+  obterCaixas: () => estado.caixas,
   comVoltar,
   aoAviso: (texto) => toast(texto),
 });
@@ -677,6 +725,7 @@ const nova = criarNova({
 const notas = criarNotas({
   aoLer: () => dados.notas(),
   aoSalvar: (area, texto) => dados.salvarNota(area, texto),
+  obterCaixas: () => estado.caixas,
 });
 
 const feitas = criarFeitas({
@@ -684,6 +733,7 @@ const feitas = criarFeitas({
     await reabrirTarefa(tarefa);
     toast('Voltou para a lista');
   },
+  obterCaixas: () => estado.caixas,
 });
 
 el.btnNova.addEventListener('click', () => nova.abrir({ caixa: estado.caixa }));
@@ -725,6 +775,7 @@ const detalhes = criarDetalhes({
       return [];
     }
   },
+  obterCaixas: () => estado.caixas,
   comVoltar,
 });
 
@@ -782,12 +833,28 @@ async function atualizarApp() {
   location.reload();
 }
 
+async function mudarCaixas(operacao) {
+  const resultado = await operacao();
+  await recarregar();
+  return resultado;
+}
+
 const ajustes = criarAjustes({
   modoLocal,
   obterEmail: () => {
     const usuario = dados.usuario();
     return (usuario && usuario.email) || '';
   },
+  obterCaixas: () => estado.caixas,
+  contarTarefas: (chave) =>
+    estado.tarefas.filter((tarefa) => tarefa.area === chave).length,
+  aoCriarCaixa: (nome, tinta) =>
+    mudarCaixas(() => dados.criarCaixa(nome, tinta)),
+  aoEditarCaixa: (chave, campos) =>
+    mudarCaixas(() => dados.editarCaixa(chave, campos)),
+  aoOrdenarCaixas: (chaves) => mudarCaixas(() => dados.ordenarCaixas(chaves)),
+  aoApagarCaixa: (chave, destino) =>
+    mudarCaixas(() => dados.apagarCaixa(chave, destino)),
   aoSair: async () => {
     await dados.sair();
   },
@@ -1022,6 +1089,17 @@ dados.aoErro((codigo) => {
 });
 
 dados.assinar((pacote) => {
+  if (pacote && Array.isArray(pacote.caixas)) {
+    const antesCaixas = assinaturaCaixas(estado.caixas);
+    estado.caixas = pacote.caixas;
+    if (assinaturaCaixas(estado.caixas) !== antesCaixas) {
+      delete el.notas.dataset.caixa;
+    }
+    const antes = estado.caixa;
+    estado.caixa = caixaLembrada(estado.caixa, estado.caixas);
+    if (antes !== estado.caixa) lembrar('tarefas.caixa.v2', estado.caixa);
+    renderAreas();
+  }
   if (pacote && Array.isArray(pacote.tarefas)) {
     estado.tarefas = pacote.tarefas;
     renderTudo();
@@ -1052,6 +1130,10 @@ async function iniciar() {
       estado.autenticado = true;
       estado.membro = rapida.membro || 'dono';
       estado.tarefas = rapida.tarefas || [];
+      if (Array.isArray(rapida.caixas) && rapida.caixas.length) {
+        estado.caixas = rapida.caixas;
+      }
+      estado.caixa = caixaLembrada(estado.caixa, estado.caixas);
       mostrarTela('app');
       renderAreas();
       renderTudo();

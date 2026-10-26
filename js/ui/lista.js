@@ -2,15 +2,16 @@
 // o momento de concluir e o arrastar entre faixas e caixas.
 
 import {
-  ROTULOS_AREA,
   faixaDe,
   formatarHora,
   origemExterna,
   partesComLinks,
   progresso,
+  rotuloCaixa,
   rotuloData,
   dominio,
   dividirComData,
+  tintaCaixa,
 } from '../logica.js';
 import { h, limpar } from './dom.js';
 import { icone } from './icones.js';
@@ -62,6 +63,7 @@ export function criarLista({
   aoMover,
   aoNovaNaFaixa,
   aoSubMarcar,
+  obterCaixas = () => [],
 }) {
   const raiz = document.getElementById('lista');
   const recolhidas = new Set(['esperando']);
@@ -235,8 +237,8 @@ export function criarLista({
     if (contexto.caixa === 'tudo') {
       detalhe.appendChild(
         h('span', {
-          class: `etiqueta tinta-${tarefa.area || 'pessoal'}`,
-          text: ROTULOS_AREA[tarefa.area] || 'Pessoal',
+          class: `etiqueta tinta-${tintaCaixa(contexto.caixas, tarefa.area)}`,
+          text: rotuloCaixa(contexto.caixas, tarefa.area),
         }),
       );
     }
@@ -314,7 +316,7 @@ export function criarLista({
 
   function criarLinha(tarefa, contexto) {
     const linha = h('div', {
-      class: `linha tinta-${tarefa.area || 'pessoal'}`,
+      class: `linha tinta-${tintaCaixa(contexto.caixas, tarefa.area)}`,
       role: 'listitem',
       dataset: { id: tarefa.id },
     });
@@ -763,6 +765,7 @@ export function criarLista({
       faixas: faixas || [],
       contexto: {
         caixa: contexto.caixa || 'tudo',
+        caixas: Array.isArray(contexto.caixas) ? contexto.caixas : obterCaixas(),
         hoje: contexto.hoje,
         busca: contexto.busca || '',
         iaRecentes:

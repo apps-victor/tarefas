@@ -1,7 +1,11 @@
 // Bloco de notas livre de cada caixa. Em "Tudo", os quatro blocos em sequência.
 // Grava sozinho alguns instantes depois de parar de digitar e ao sair do campo.
 
-import { AREAS, ROTULOS_AREA } from '../logica.js';
+import {
+  caixasOrdenadas,
+  rotuloCaixa,
+  tintaCaixa,
+} from '../logica.js';
 import { h, limpar } from './dom.js';
 
 const ESPERA_GRAVAR = 800;
@@ -16,7 +20,7 @@ function horaCurta(instante) {
   });
 }
 
-export function criarNotas({ aoLer, aoSalvar }) {
+export function criarNotas({ aoLer, aoSalvar, obterCaixas = () => [] }) {
   const raiz = document.getElementById('notas');
   let notas = {};
   let pedido = 0;
@@ -54,14 +58,17 @@ export function criarNotas({ aoLer, aoSalvar }) {
     }
   }
 
-  function bloco(area, { sozinho }) {
-    const sec = h('div', { class: `bloco-nota tinta-${area}` });
+  function bloco(area, { sozinho, caixas }) {
+    const rotulo = rotuloCaixa(caixas, area);
+    const sec = h('div', {
+      class: `bloco-nota tinta-${tintaCaixa(caixas, area)}`,
+    });
     if (!sozinho) {
-      sec.appendChild(h('h2', { class: 'bloco-nota-titulo', text: ROTULOS_AREA[area] }));
+      sec.appendChild(h('h2', { class: 'bloco-nota-titulo', text: rotulo }));
     }
     const campo = h('textarea', {
       class: 'papel',
-      'aria-label': `Notas de ${ROTULOS_AREA[area]}`,
+      'aria-label': `Notas de ${rotulo}`,
       placeholder: sozinho
         ? 'Escreva à vontade: ideias, listas, o que lembrar…'
         : 'Notas desta caixa',
@@ -103,9 +110,11 @@ export function criarNotas({ aoLer, aoSalvar }) {
     if (meu !== pedido) return;
     if (lidas) notas = lidas;
     limpar(raiz);
-    const areas = caixa === 'tudo' ? AREAS : [caixa];
+    const caixas = caixasOrdenadas(obterCaixas());
+    const areas =
+      caixa === 'tudo' ? caixas.map((item) => item.chave) : [caixa];
     for (const area of areas) {
-      raiz.appendChild(bloco(area, { sozinho: areas.length === 1 }));
+      raiz.appendChild(bloco(area, { sozinho: areas.length === 1, caixas }));
     }
   }
 

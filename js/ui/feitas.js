@@ -1,13 +1,17 @@
 // O que já foi feito, por dia. Tocar no círculo reabre a tarefa.
 
-import { ROTULOS_AREA, feitasPorDia } from '../logica.js';
+import { feitasPorDia, rotuloCaixa, tintaCaixa } from '../logica.js';
 import { h, limpar } from './dom.js';
 
-export function criarFeitas({ aoReabrir }) {
+export function criarFeitas({ aoReabrir, obterCaixas = () => [] }) {
   const raiz = document.getElementById('feitas');
 
   function linha(tarefa, caixa) {
-    const li = h('div', { class: `linha linha-feita tinta-${tarefa.area || 'pessoal'}`, role: 'listitem' });
+    const caixas = obterCaixas();
+    const li = h('div', {
+      class: `linha linha-feita tinta-${tintaCaixa(caixas, tarefa.area)}`,
+      role: 'listitem',
+    });
     const circulo = h('button', {
       class: 'circulo cheio',
       type: 'button',
@@ -22,8 +26,8 @@ export function criarFeitas({ aoReabrir }) {
       corpo.appendChild(
         h('span', { class: 'detalhe' }, [
           h('span', {
-            class: `etiqueta tinta-${tarefa.area || 'pessoal'}`,
-            text: ROTULOS_AREA[tarefa.area] || 'Pessoal',
+            class: `etiqueta tinta-${tintaCaixa(caixas, tarefa.area)}`,
+            text: rotuloCaixa(caixas, tarefa.area),
           }),
         ]),
       );

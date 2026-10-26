@@ -7,15 +7,17 @@
 //       foco: false, avisos: [] }
 
 import {
+  CAIXAS_PADRAO,
   DIAS_SEMANA,
-  ROTULOS_AREA,
   diaSemana,
   diasNoMes,
   diferencaDias,
+  primeiraCaixa,
   primeiraOcorrencia,
   formatarISO,
   hojeSP,
   normalizarData,
+  resolverCaixaPorPalavra,
   somarDias,
 } from './logica.js';
 
@@ -109,11 +111,15 @@ function proximoDiaSemana(alvo, hoje) {
 /**
  * @param {string} texto
  * @param {string} hoje data local no formato 'AAAA-MM-DD'
+ * @param {Array<{chave,nome,tinta,ordem,fixa}>} [caixas] caixas do dono; sem
+ *   elas, usa as 5 de hoje (compatibilidade com chamadas antigas).
  */
-export function interpretar(texto, hoje) {
+export function interpretar(texto, hoje, caixas) {
   const original = typeof texto === 'string' ? texto : '';
   const normal = normalizar(original);
   const h = normalizarData(hoje) || hojeSP();
+  const listaCaixas =
+    Array.isArray(caixas) && caixas.length ? caixas : CAIXAS_PADRAO;
 
   const consumido = new Array(original.length).fill(false);
   const trechos = {};
@@ -163,17 +169,37 @@ export function interpretar(texto, hoje) {
   // ------------------------------------------------------------------ área
   let area = null;
   const areas = [];
-  varrer(/#(casa|lapig|buriti|pessoal|ia)\b/g, (m, ini, fim) => {
-    areas.push({ area: m[1], ini, fim });
-  });
+  const reArea = /#([a-z0-9_]+)/g;
+  let achadoArea = reArea.exec(normal);
+  while (achadoArea !== null) {
+    const ini = achadoArea.index;
+    const fim = ini + achadoArea[0].length;
+    if (livre(ini, fim)) {
+      const achado = resolverCaixaPorPalavra(listaCaixas, achadoArea[1]);
+      if (achado.caixa) {
+        marcar(ini, fim);
+        areas.push({
+          area: achado.caixa.chave,
+          nome: achado.caixa.nome,
+          ini,
+          fim,
+        });
+      } else if (achado.ambigua) {
+        aviso(
+          `caixa ambígua: mais de uma caixa começa com "${achadoArea[1]}"; use o nome completo ou a chave`,
+        );
+      }
+    }
+    achadoArea = reArea.exec(normal);
+  }
   if (areas.length) {
     area = areas[0].area;
     trechos.area = [areas[0].ini, areas[0].fim];
     if (areas.length > 1) {
-      aviso(`mais de uma área; usei ${ROTULOS_AREA[area]}`);
+      aviso(`mais de uma área; usei ${areas[0].nome}`);
     }
   }
-  if (!area) area = 'pessoal';
+  if (!area) area = primeiraCaixa(listaCaixas).chave;
 
   // -------------------------------------------------------------- repetição
   const padroesRepetir = [

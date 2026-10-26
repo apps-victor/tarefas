@@ -37,11 +37,16 @@
   --toast-acao: #f1cf8e;
 
   --tinta-tudo: #2f4157;
-  --tinta-casa: #9a3f1e;
-  --tinta-lapig: #1f5e57;
-  --tinta-buriti: #85600f;
-  --tinta-pessoal: #5b3d7a;
-  --tinta-ia: #2c4f9e;
+  --tinta-roxo: #5b3d7a;
+  --tinta-terracota: #9a3f1e;
+  --tinta-verde: #1f5e57;
+  --tinta-ocre: #85600f;
+  --tinta-azul: #2c4f9e;
+  --tinta-ardosia: #46535f;
+  --tinta-vinho: #7d2740;
+  --tinta-oliva: #4f5d24;
+  --tinta-rosa: #8f3f63;
+  --tinta-petroleo: #1f5266;
   --tinta: var(--tinta-tudo);
 }
 
@@ -63,11 +68,16 @@
     --toast-acao: #7a4f0c;
 
     --tinta-tudo: #a6bbdb;
-    --tinta-casa: #e59b78;
-    --tinta-lapig: #7cc4b6;
-    --tinta-buriti: #dcb560;
-    --tinta-pessoal: #bea5df;
-    --tinta-ia: #9fb8ef;
+    --tinta-roxo: #bea5df;
+    --tinta-terracota: #e59b78;
+    --tinta-verde: #7cc4b6;
+    --tinta-ocre: #dcb560;
+    --tinta-azul: #9fb8ef;
+    --tinta-ardosia: #b7c3cf;
+    --tinta-vinho: #e6a1b3;
+    --tinta-oliva: #c6d08b;
+    --tinta-rosa: #eda3c2;
+    --tinta-petroleo: #85c4d6;
   }
 }
 
@@ -75,25 +85,35 @@
 [data-caixa='tudo'] {
   --tinta: var(--tinta-tudo);
 }
-.tinta-casa,
-[data-caixa='casa'] {
-  --tinta: var(--tinta-casa);
+.tinta-roxo {
+  --tinta: var(--tinta-roxo);
 }
-.tinta-lapig,
-[data-caixa='lapig'] {
-  --tinta: var(--tinta-lapig);
+.tinta-terracota {
+  --tinta: var(--tinta-terracota);
 }
-.tinta-buriti,
-[data-caixa='buriti'] {
-  --tinta: var(--tinta-buriti);
+.tinta-verde {
+  --tinta: var(--tinta-verde);
 }
-.tinta-pessoal,
-[data-caixa='pessoal'] {
-  --tinta: var(--tinta-pessoal);
+.tinta-ocre {
+  --tinta: var(--tinta-ocre);
 }
-.tinta-ia,
-[data-caixa='ia'] {
-  --tinta: var(--tinta-ia);
+.tinta-azul {
+  --tinta: var(--tinta-azul);
+}
+.tinta-ardosia {
+  --tinta: var(--tinta-ardosia);
+}
+.tinta-vinho {
+  --tinta: var(--tinta-vinho);
+}
+.tinta-oliva {
+  --tinta: var(--tinta-oliva);
+}
+.tinta-rosa {
+  --tinta: var(--tinta-rosa);
+}
+.tinta-petroleo {
+  --tinta: var(--tinta-petroleo);
 }
 
 *,
@@ -1642,6 +1662,248 @@ body.arrastando {
   margin: 0;
   font-size: 12.5px;
   color: var(--lapis);
+}
+
+/* ------------------------------------------------------------ caixas nos ajustes */
+
+.lista-caixas {
+  display: flex;
+  flex-direction: column;
+}
+
+.caixa-linha {
+  padding: 6px 0 2px;
+  border-bottom: 1px solid var(--pauta);
+}
+
+.caixa-topo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caixa-tinta-atual {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.caixa-tinta-atual .bolinha {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--tinta);
+  box-shadow: inset 0 0 0 1px rgba(43, 39, 34, 0.12);
+}
+
+.caixa-tinta-atual[aria-expanded='true'] {
+  background: var(--papel-3);
+}
+
+.caixa-tinta-atual:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.caixa-nome {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.caixa-nome:hover:not(:disabled),
+.caixa-nome:focus {
+  border-color: var(--pauta-forte);
+  background: var(--papel-2);
+}
+
+.caixa-acoes {
+  display: flex;
+  align-items: center;
+}
+
+.caixa-seta {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+  color: var(--lapis);
+}
+
+.caixa-seta:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.caixa-tintas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2px;
+  margin: 0 0 2px 52px;
+}
+
+.tinta-opcao {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.tinta-opcao .bolinha {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tinta);
+  box-shadow: inset 0 0 0 1px rgba(43, 39, 34, 0.12);
+}
+
+.tinta-opcao.ativa .bolinha {
+  box-shadow:
+    0 0 0 2px var(--papel-2),
+    0 0 0 4px var(--tinta);
+}
+
+.tinta-opcao:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.caixa-fixa {
+  margin: 0 0 6px 18px;
+  font-size: 11.5px;
+  color: var(--lapis-claro);
+}
+
+.caixa-erro {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--ambar);
+}
+
+.caixa-apagar {
+  margin: 2px 0 12px 18px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--pauta-forte);
+}
+
+.caixa-apagar-titulo {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.caixa-apagar-opcoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.caixa-nova {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pauta);
+}
+
+.caixa-nova-titulo {
+  margin: 0 0 2px;
+  font-size: 13px;
+  color: var(--lapis);
+}
+
+.caixa-nova-nome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caixa-nova-nome .entrada {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------ prévia */
+
+.previa {
+  gap: 16px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.previa-subtitulo {
+  max-width: 520px;
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.previa-contas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.previa-conta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 18px;
+  text-align: left;
+  background: var(--papel-2);
+  border: 1px solid var(--pauta-forte);
+  border-radius: 14px;
+  color: var(--grafite);
+}
+
+.previa-conta:hover {
+  border-color: var(--lapis);
+}
+
+.previa-conta-titulo {
+  font-family: var(--serifa);
+  font-size: 22px;
+  color: var(--tinta-tudo);
+}
+
+.previa-conta-texto {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--lapis);
+}
+
+.previa-bolinhas {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.previa-bolinhas .bolinha {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tinta);
+  box-shadow: inset 0 0 0 1px rgba(43, 39, 34, 0.12);
+}
+
+.previa-status {
+  min-height: 18px;
+  font-size: 13px;
+}
+
+.previa-nota {
+  font-size: 12px;
+  max-width: 460px;
+  margin: 0;
 }
 
 /* ------------------------------------------------------------ aviso */

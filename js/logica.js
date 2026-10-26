@@ -2,15 +2,46 @@
 // Datas são strings 'AAAA-MM-DD' no fuso local (America/Sao_Paulo).
 // Cálculos de calendário usam UTC para não depender do fuso do aparelho.
 
-export const AREAS = ['pessoal', 'casa', 'lapig', 'buriti', 'ia'];
+export const TINTAS = [
+  'roxo',
+  'terracota',
+  'verde',
+  'ocre',
+  'azul',
+  'ardosia',
+  'vinho',
+  'oliva',
+  'rosa',
+  'petroleo',
+];
 
-export const ROTULOS_AREA = {
-  casa: 'Casa',
-  lapig: 'LAPIG',
-  buriti: 'Buriti',
-  pessoal: 'Pessoal',
-  ia: 'IA',
+export const ROTULOS_TINTA = {
+  roxo: 'Roxo',
+  terracota: 'Terracota',
+  verde: 'Verde',
+  ocre: 'Ocre',
+  azul: 'Azul',
+  ardosia: 'Ardósia',
+  vinho: 'Vinho',
+  oliva: 'Oliva',
+  rosa: 'Rosa',
+  petroleo: 'Petróleo',
 };
+
+// As 5 caixas de hoje (valor inicial antes do primeiro tf_caixas()).
+export const CAIXAS_PADRAO = [
+  { chave: 'pessoal', nome: 'Pessoal', tinta: 'roxo', ordem: 1, fixa: false },
+  { chave: 'casa', nome: 'Casa', tinta: 'terracota', ordem: 2, fixa: false },
+  { chave: 'lapig', nome: 'LAPIG', tinta: 'verde', ordem: 3, fixa: true },
+  { chave: 'buriti', nome: 'Buriti', tinta: 'ocre', ordem: 4, fixa: true },
+  { chave: 'ia', nome: 'IA', tinta: 'azul', ordem: 5, fixa: true },
+];
+
+export const AREAS = CAIXAS_PADRAO.map((caixa) => caixa.chave);
+
+export const ROTULOS_AREA = Object.fromEntries(
+  CAIXAS_PADRAO.map((caixa) => [caixa.chave, caixa.nome]),
+);
 
 export const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
@@ -577,4 +608,111 @@ export function semAcento(texto) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// Caixas personalizáveis
+// ---------------------------------------------------------------------------
+
+/** Nome de caixa normalizado para o parser: minúsculas, sem acento, sem espaços. */
+export function normalizarNomeCaixa(nome) {
+  return semAcento(nome).replace(/\s+/g, '');
+}
+
+/** Lista de caixas em ordem (não altera a original). */
+export function caixasOrdenadas(caixas) {
+  return (Array.isArray(caixas) ? caixas : [])
+    .filter((caixa) => caixa && typeof caixa.chave === 'string' && caixa.chave)
+    .slice()
+    .sort(
+      (a, b) =>
+        (Number(a.ordem) || 0) - (Number(b.ordem) || 0) ||
+        String(a.chave).localeCompare(String(b.chave)),
+    );
+}
+
+export function caixaDe(caixas, chave) {
+  if (!chave) return null;
+  return (
+    (Array.isArray(caixas) ? caixas : []).find(
+      (caixa) => caixa && caixa.chave === chave,
+    ) || null
+  );
+}
+
+/** Rótulo de uma área: nome da caixa; chave quando o app não conhece (cache velho). */
+export function rotuloCaixa(caixas, chave) {
+  const caixa = caixaDe(caixas, chave);
+  if (caixa && caixa.nome) return caixa.nome;
+  return chave || 'Pessoal';
+}
+
+/** Tinta de uma área: a da caixa; 'ardosia' quando o app não conhece a área. */
+export function tintaCaixa(caixas, chave) {
+  const caixa = caixaDe(caixas, chave);
+  if (caixa && TINTAS.includes(caixa.tinta)) return caixa.tinta;
+  return 'ardosia';
+}
+
+/** Primeira caixa pela ordem (ou Pessoal quando ainda não carregou). */
+export function primeiraCaixa(caixas) {
+  return caixasOrdenadas(caixas)[0] || CAIXAS_PADRAO[0];
+}
+
+/** Primeira palavra do nome, normalizada (minúsculas, sem acento). */
+export function primeiraPalavraCaixa(nome) {
+  return (
+    semAcento(String(nome == null ? '' : nome))
+      .toLowerCase()
+      .trim()
+      .split(/\s+/)[0] || ''
+  );
+}
+
+/**
+ * Resolve a palavra do `#`:
+ * 1. nome completo normalizado ou chave exata;
+ * 2. primeira palavra do nome, quando só uma caixa tem essa primeira palavra
+ *    e nenhuma outra casa pelo nome/chave inteiros (o caso exato já venceu).
+ * Devolve `{ caixa, ambigua }`; ambígua = mais de uma caixa começa pela palavra.
+ */
+export function resolverCaixaPorPalavra(caixas, palavra) {
+  const alvo = normalizarNomeCaixa(palavra);
+  if (!alvo) return { caixa: null, ambigua: false };
+  const lista =
+    Array.isArray(caixas) && caixas.length ? caixas : CAIXAS_PADRAO;
+  const chave = String(palavra == null ? '' : palavra).toLowerCase();
+
+  const exata =
+    lista.find(
+      (caixa) =>
+        caixa &&
+        (normalizarNomeCaixa(caixa.nome) === alvo ||
+          String(caixa.chave).toLowerCase() === chave),
+    ) || null;
+  if (exata) return { caixa: exata, ambigua: false };
+
+  const candidatas = lista.filter(
+    (caixa) => caixa && primeiraPalavraCaixa(caixa.nome) === alvo,
+  );
+  if (candidatas.length === 1) {
+    return { caixa: candidatas[0], ambigua: false };
+  }
+  return { caixa: null, ambigua: candidatas.length > 1 };
+}
+
+/** Acha a caixa cujo nome completo, chave ou primeira palavra casa com `#palavra`. */
+export function acharCaixaPorPalavra(caixas, palavra) {
+  return resolverCaixaPorPalavra(caixas, palavra).caixa;
+}
+
+/** A caixa lembrada ainda existe? Se não, volta para "Tudo". */
+export function caixaLembrada(chave, caixas) {
+  if (!chave || chave === 'tudo') return 'tudo';
+  return caixaDe(caixas, chave) ? chave : 'tudo';
+}
+
+/** Chaves das caixas na ordem do usuário. */
+export function chavesCaixas(caixas) {
+  return caixasOrdenadas(caixas).map((caixa) => caixa.chave);
 }

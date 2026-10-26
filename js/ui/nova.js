@@ -4,14 +4,17 @@
 
 import { interpretar } from '../parser.js';
 import {
-  AREAS,
   PRIORIDADES,
-  ROTULOS_AREA,
   ROTULOS_FAIXA,
+  caixaDe,
+  caixasOrdenadas,
   diaSemana,
   formatarHora,
+  primeiraCaixa,
+  rotuloCaixa,
   rotuloCurto,
   somarDias,
+  tintaCaixa,
 } from '../logica.js';
 import { h, limpar } from './dom.js';
 import { icone } from './icones.js';
@@ -55,7 +58,14 @@ function chip(texto, { ativo = false, classe = '', aoClicar } = {}) {
   return botao;
 }
 
-export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso }) {
+export function criarNova({
+  aoCriar,
+  aoMostrar,
+  obterHoje,
+  obterCaixas = () => [],
+  comVoltar,
+  aoAviso,
+}) {
   const painel = document.getElementById('nova');
   const fundo = document.getElementById('nova-fundo');
   let aberto = false;
@@ -63,7 +73,7 @@ export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso })
   let enviando = false;
   // `base` guarda o que foi escolhido nos botões; o texto (#casa, amanhã, 7h, !)
   // só sobrepõe enquanto estiver escrito, e some ao anotar.
-  const base = { area: 'pessoal', faixa: 'proximo', quando: null, hora: null };
+  const base = { area: null, faixa: 'proximo', quando: null, hora: null };
   const escolha = { ...base };
 
   const form = h('form', { class: 'nova-form', autocomplete: 'off' });
@@ -95,7 +105,7 @@ export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso })
   function interpretado() {
     const texto = titulo.value;
     if (!texto.trim()) return null;
-    return interpretar(texto, obterHoje());
+    return interpretar(texto, obterHoje(), obterCaixas());
   }
 
   function aplicarParser() {
@@ -105,7 +115,7 @@ export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso })
     if (res && res.trechos) {
       if (res.trechos.area) {
         escolha.area = res.area;
-        partes.push(ROTULOS_AREA[res.area]);
+        partes.push(rotuloCaixa(obterCaixas(), res.area));
       }
       if (res.quando) {
         escolha.faixa = 'com_data';
@@ -143,16 +153,20 @@ export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso })
 
   function desenharEscolhas() {
     const hoje = obterHoje();
-    painel.dataset.caixa = escolha.area;
+    const caixas = caixasOrdenadas(obterCaixas());
+    if (!caixaDe(caixas, escolha.area)) {
+      escolha.area = primeiraCaixa(caixas).chave;
+    }
+    painel.className = `folha-nova tinta-${tintaCaixa(caixas, escolha.area)}`;
     limpar(linhaCaixa);
-    for (const area of AREAS) {
+    for (const caixa of caixas) {
       linhaCaixa.appendChild(
-        chip(ROTULOS_AREA[area], {
-          ativo: escolha.area === area,
-          classe: `chip-caixa tinta-${area}`,
+        chip(caixa.nome, {
+          ativo: escolha.area === caixa.chave,
+          classe: `chip-caixa tinta-${tintaCaixa(caixas, caixa.chave)}`,
           aoClicar: () => {
-            escolha.area = area;
-            base.area = area;
+            escolha.area = caixa.chave;
+            base.area = caixa.chave;
             desenharEscolhas();
           },
         }),
@@ -238,7 +252,12 @@ export function criarNova({ aoCriar, aoMostrar, obterHoje, comVoltar, aoAviso })
   }
 
   function abrir({ caixa, faixa } = {}) {
-    if (caixa && caixa !== 'tudo') base.area = caixa;
+    const caixas = caixasOrdenadas(obterCaixas());
+    if (caixa && caixa !== 'tudo' && caixaDe(caixas, caixa)) {
+      base.area = caixa;
+    } else if (!caixaDe(caixas, base.area)) {
+      base.area = primeiraCaixa(caixas).chave;
+    }
     base.faixa = faixa || 'proximo';
     base.quando = base.faixa === 'com_data' ? obterHoje() : null;
     base.hora = null;

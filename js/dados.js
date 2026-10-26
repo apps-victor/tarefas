@@ -13,6 +13,13 @@ import {
   supabaseAnonKey,
 } from './config.js';
 import { proximaData, hojeSP, normalizarData, somarDias } from './logica.js';
+import {
+  CAIXAS_PADRAO,
+  TINTAS,
+  caixasOrdenadas,
+  chavesCaixas,
+  semAcento,
+} from './logica.js';
 
 export const modoLocal = !supabaseUrl || !supabaseAnonKey;
 
@@ -22,15 +29,61 @@ const CHAVE_FILA = 'tarefas.fila.v1';
 const CHAVE_MEMBRO = 'tarefas.membro.v1';
 const CHAVE_DONO = 'tarefas.dono.v1';
 const CHAVE_NOTAS = 'tarefas.notas.v1';
+const CHAVE_CAIXAS = 'tarefas.caixas.v1';
 
-const AREAS = ['pessoal', 'casa', 'lapig', 'buriti', 'ia'];
+const AREAS_PADRAO = CAIXAS_PADRAO.map((caixa) => caixa.chave);
 const PRIORIDADES = ['imediato', 'proximo', 'em_breve'];
 const LIMITE_LISTA = 500;
+const LIMITE_CAIXAS = 12;
 // Feitas mais antigas que isso não vêm do servidor (a tela de Feitas mostra este período).
 const DIAS_FEITAS = 45;
 const LIMITE_NOTA = 20000;
 // Sem resposta nesse tempo, a RPC é tratada como falha de rede e o cache fica.
 const LIMITE_RPC = 8000;
+
+function caixasPadrao() {
+  return CAIXAS_PADRAO.map((caixa) => ({ ...caixa }));
+}
+
+/** Valida e ordena as caixas que vêm do banco/cache; lista vazia vira o padrão. */
+function normalizarCaixas(dado) {
+  if (typeof dado === 'string') {
+    try {
+      return normalizarCaixas(JSON.parse(dado));
+    } catch {
+      return caixasPadrao();
+    }
+  }
+  const lista =
+    dado && !Array.isArray(dado) && Array.isArray(dado.caixas)
+      ? dado.caixas
+      : dado;
+  const saida = (Array.isArray(lista) ? lista : [])
+    .filter((caixa) => caixa && typeof caixa.chave === 'string' && caixa.chave)
+    .map((caixa) => ({
+      chave: caixa.chave,
+      nome:
+        typeof caixa.nome === 'string' && caixa.nome.trim()
+          ? caixa.nome.trim()
+          : caixa.chave,
+      tinta: TINTAS.includes(caixa.tinta) ? caixa.tinta : 'ardosia',
+      ordem: Number(caixa.ordem) || 0,
+      fixa: caixa.fixa === true,
+    }));
+  return saida.length ? caixasOrdenadas(saida) : caixasPadrao();
+}
+
+function areasDe(caixas) {
+  if (
+    Array.isArray(caixas) &&
+    caixas.length &&
+    caixas.every((item) => typeof item === 'string')
+  ) {
+    return caixas;
+  }
+  const chaves = chavesCaixas(caixas);
+  return chaves.length ? chaves : AREAS_PADRAO;
+}
 
 /** Corre uma promessa com limite; ao estourar, rejeita como erro de rede. */
 function comLimite(promessa, ms) {
@@ -45,8 +98,8 @@ function comLimite(promessa, ms) {
   return Promise.race([promessa, estouro]).finally(() => clearTimeout(timer));
 }
 
-function validarNota(area, texto) {
-  if (!AREAS.includes(area)) throw erro('invalido:area');
+function validarNota(area, texto, areas) {
+  if (!areasDe(areas).includes(area)) throw erro('invalido:area');
   if (typeof texto !== 'string' || texto.length > LIMITE_NOTA) {
     throw erro('invalido:texto');
   }
@@ -226,7 +279,7 @@ const CAMPOS_ATUALIZACAO = [
   'estado',
 ];
 
-function validarCampos(campos, { criacao = false } = {}) {
+function validarCampos(campos, { criacao = false, areas = null } = {}) {
   if (!campos || typeof campos !== 'object' || Array.isArray(campos)) {
     throw erro('invalido:campos');
   }
@@ -237,6 +290,7 @@ function validarCampos(campos, { criacao = false } = {}) {
       saida[chave] = campos[chave];
     }
   }
+  const areasValidas = areasDe(areas);
 
   if (criacao && !Object.prototype.hasOwnProperty.call(saida, 'titulo')) {
     throw erro('invalido:titulo');
@@ -263,7 +317,7 @@ function validarCampos(campos, { criacao = false } = {}) {
     if (saida.area == null) {
       if (criacao) delete saida.area;
       else throw erro('invalido:area');
-    } else if (!AREAS.includes(saida.area)) {
+    } else if (!areasValidas.includes(saida.area)) {
       throw erro('invalido:area');
     }
   }
@@ -342,6 +396,175 @@ function validarCampos(campos, { criacao = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Caixas (mesmas regras das RPCs, para o modo local e para validar offline)
+
+function validarNomeCaixa(nome) {
+  const valor = typeof nome === 'string' ? nome.trim() : '';
+  if (valor.length < 1 || valor.length > 30 || /[<>]/.test(valor)) {
+    throw erro('invalido:nome');
+  }
+  return valor;
+}
+
+function validarTintaCaixa(tinta) {
+  if (!TINTAS.includes(tinta)) throw erro('invalido:tinta');
+  return tinta;
+}
+
+function chaveBaseCaixa(nome) {
+  const base = semAcento(nome)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24)
+    .replace(/^_+|_+$/g, '');
+  return base || 'caixa';
+}
+
+function gerarChaveCaixa(nome, existentes) {
+  const base = chaveBaseCaixa(nome);
+  let chave = base;
+  let n = 1;
+  while (existentes.has(chave)) {
+    n += 1;
+    const sufixo = `_${n}`;
+    chave = `${base.slice(0, 24 - sufixo.length)}${sufixo}`;
+  }
+  return chave;
+}
+
+function caixaNaLista(estado, chave) {
+  return (estado.caixas || []).find((caixa) => caixa.chave === chave) || null;
+}
+
+function criarCaixaNaLista(estado, nome, tinta) {
+  if (!Array.isArray(estado.caixas) || !estado.caixas.length) {
+    estado.caixas = caixasPadrao();
+  }
+  if (estado.caixas.length >= LIMITE_CAIXAS) throw erro('limite_caixas');
+  const valor = validarNomeCaixa(nome);
+  const cor = validarTintaCaixa(tinta);
+  if (
+    estado.caixas.some(
+      (caixa) => caixa.nome.toLowerCase() === valor.toLowerCase(),
+    )
+  ) {
+    throw erro('nome_repetido');
+  }
+  const chave = gerarChaveCaixa(
+    valor,
+    new Set(estado.caixas.map((caixa) => caixa.chave)),
+  );
+  const caixa = {
+    chave,
+    nome: valor,
+    tinta: cor,
+    ordem:
+      estado.caixas.reduce(
+        (maior, item) => Math.max(maior, Number(item.ordem) || 0),
+        0,
+      ) + 1,
+    fixa: false,
+  };
+  estado.caixas.push(caixa);
+  return clone(caixa);
+}
+
+function editarCaixaNaLista(estado, chave, campos = {}) {
+  const caixa = caixaNaLista(estado, chave);
+  if (!caixa) throw erro('nao_encontrada');
+  let nome = caixa.nome;
+  let tinta = caixa.tinta;
+  if (campos.nome != null) {
+    nome = validarNomeCaixa(campos.nome);
+    if (
+      estado.caixas.some(
+        (outra) =>
+          outra.chave !== chave &&
+          outra.nome.toLowerCase() === nome.toLowerCase(),
+      )
+    ) {
+      throw erro('nome_repetido');
+    }
+  }
+  if (campos.tinta != null) tinta = validarTintaCaixa(campos.tinta);
+  caixa.nome = nome;
+  caixa.tinta = tinta;
+  return clone(caixa);
+}
+
+function ordenarCaixasNaLista(estado, chaves) {
+  const atuais = estado.caixas || [];
+  if (
+    !Array.isArray(chaves) ||
+    chaves.length !== atuais.length ||
+    new Set(chaves).size !== atuais.length ||
+    chaves.some((chave) => !caixaNaLista(estado, chave))
+  ) {
+    throw erro('invalido:chaves');
+  }
+  chaves.forEach((chave, indice) => {
+    caixaNaLista(estado, chave).ordem = indice + 1;
+  });
+  estado.caixas = caixasOrdenadas(estado.caixas);
+  return clone(estado.caixas);
+}
+
+function apagarCaixaNaLista(estado, chave, destino) {
+  const caixa = caixaNaLista(estado, chave);
+  if (!caixa) throw erro('nao_encontrada');
+  if (caixa.fixa) throw erro('caixa_fixa');
+  if ((estado.caixas || []).length <= 1) throw erro('ultima_caixa');
+  if (!destino || destino === chave || !caixaNaLista(estado, destino)) {
+    throw erro('invalido:destino');
+  }
+
+  const notas = estado.notas || (estado.notas = {});
+  const origem = notas[chave];
+  const atual = notas[destino];
+  let textoFinal = null;
+  if (origem && typeof origem.texto === 'string' && origem.texto.trim()) {
+    const linha = `— de ${caixa.nome} —`;
+    textoFinal =
+      atual && typeof atual.texto === 'string' && atual.texto.trim()
+        ? `${atual.texto}\n\n${linha}\n${origem.texto}`
+        : `${linha}\n${origem.texto}`;
+    if (textoFinal.length > LIMITE_NOTA) throw erro('nota_grande');
+  }
+
+  let movidas = 0;
+  for (const tarefa of estado.tarefas || []) {
+    if (tarefa.area !== chave) continue;
+    const antes = clone(tarefa);
+    tarefa.area = destino;
+    tocarTarefa(tarefa);
+    registrarEvento(estado, tarefa.id, 'mover_caixa', antes, tarefa);
+    movidas += 1;
+  }
+
+  if (textoFinal != null) {
+    if (atual && typeof atual.texto === 'string') {
+      notas[destino] = {
+        ...atual,
+        texto: textoFinal,
+        versao: Number(atual.versao || 0) + 1,
+        atualizada_em: agoraISO(),
+      };
+    } else {
+      notas[destino] = {
+        texto: textoFinal,
+        versao: 1,
+        atualizada_em: agoraISO(),
+      };
+    }
+  }
+  delete notas[chave];
+
+  estado.caixas = estado.caixas.filter((item) => item.chave !== chave);
+  return { movidas };
+}
+
+// ---------------------------------------------------------------------------
 // Operações (espelham as RPCs; usadas no modo local e nas escritas otimistas)
 
 function registrarEvento(estado, tarefaId, acao, antes, depois, origem = 'eu') {
@@ -393,8 +616,11 @@ function tocarTarefa(tarefa) {
   tarefa.atualizada_em = agoraISO();
 }
 
-function criarNaLista(estado, campos, { dono, origem = 'eu' } = {}) {
-  const c = validarCampos(campos, { criacao: true });
+function criarNaLista(estado, campos, { dono, origem = 'eu', areas = null } = {}) {
+  const c = validarCampos(campos, { criacao: true, areas });
+  const listaCaixas = Array.isArray(estado.caixas) && estado.caixas.length
+    ? estado.caixas
+    : caixasPadrao();
 
   if (c.client_ref) {
     const existente = (estado.tarefas || []).find(
@@ -415,7 +641,7 @@ function criarNaLista(estado, campos, { dono, origem = 'eu' } = {}) {
     dono: dono || null,
     titulo: c.titulo,
     notas: c.notas == null ? null : c.notas,
-    area: c.area || 'pessoal',
+    area: c.area || listaCaixas[0].chave,
     quando: c.quando || null,
     hora: c.hora || null,
     repetir: c.repetir || null,
@@ -443,11 +669,11 @@ function criarNaLista(estado, campos, { dono, origem = 'eu' } = {}) {
   return clone(tarefa);
 }
 
-function atualizarNaLista(estado, id, versao, campos, origem = 'eu') {
+function atualizarNaLista(estado, id, versao, campos, origem = 'eu', areas = null) {
   const tarefa = acharTarefa(estado, id);
   if (!tarefa) throw erro('nao_encontrada');
   if (Number(versao) !== Number(tarefa.versao)) throw erro('conflito');
-  const c = validarCampos(campos, { criacao: false });
+  const c = validarCampos(campos, { criacao: false, areas });
   if (!Object.keys(c).length) return clone(tarefa);
   const antes = clone(tarefa);
   for (const chave of Object.keys(c)) {
@@ -658,9 +884,14 @@ export class RepositorioLocal {
         eventos: Array.isArray(valor.eventos) ? valor.eventos : [],
         seq: Number(valor.seq) || 0,
         notas: valor.notas && typeof valor.notas === 'object' ? valor.notas : {},
+        caixas: normalizarCaixas(valor.caixas),
       };
     }
-    return { tarefas: [], eventos: [], seq: 0, notas: {} };
+    return { tarefas: [], eventos: [], seq: 0, notas: {}, caixas: caixasPadrao() };
+  }
+
+  _areas() {
+    return areasDe(this.estado.caixas);
   }
 
   _salvar() {
@@ -668,7 +899,11 @@ export class RepositorioLocal {
   }
 
   _emitir(tipo) {
-    const pacote = { tipo, tarefas: clone(this.estado.tarefas) };
+    const pacote = {
+      tipo,
+      tarefas: clone(this.estado.tarefas),
+      caixas: clone(this.estado.caixas),
+    };
     for (const cb of this.ouvintes) {
       try {
         cb(pacote);
@@ -724,7 +959,7 @@ export class RepositorioLocal {
   }
 
   async salvarNota(area, texto) {
-    validarNota(area, texto);
+    validarNota(area, texto, this._areas());
     const notas = this.estado.notas || (this.estado.notas = {});
     const atual = notas[area];
     notas[area] = {
@@ -736,10 +971,43 @@ export class RepositorioLocal {
     return clone(notas[area]);
   }
 
+  async caixas() {
+    return clone(this.estado.caixas);
+  }
+
+  async criarCaixa(nome, tinta) {
+    const caixa = criarCaixaNaLista(this.estado, nome, tinta);
+    this._salvar();
+    this._emitir('caixas');
+    return caixa;
+  }
+
+  async editarCaixa(chave, campos = {}) {
+    const caixa = editarCaixaNaLista(this.estado, chave, campos);
+    this._salvar();
+    this._emitir('caixas');
+    return caixa;
+  }
+
+  async ordenarCaixas(chaves) {
+    const caixas = ordenarCaixasNaLista(this.estado, chaves);
+    this._salvar();
+    this._emitir('caixas');
+    return caixas;
+  }
+
+  async apagarCaixa(chave, destino) {
+    const resultado = apagarCaixaNaLista(this.estado, chave, destino);
+    this._salvar();
+    this._emitir('caixas');
+    return resultado;
+  }
+
   async criar(campos) {
     const tarefa = criarNaLista(this.estado, campos, {
       dono: 'local',
       origem: this.origem,
+      areas: this._areas(),
     });
     this._salvar();
     this._emitir('dados');
@@ -753,6 +1021,7 @@ export class RepositorioLocal {
       versao,
       campos,
       this.origem,
+      this._areas(),
     );
     this._salvar();
     this._emitir('dados');
@@ -892,7 +1161,17 @@ export class RepositorioLocal {
 function traduzirErro(e) {
   if (e && e.codigo) return e;
   const texto = String((e && e.message) || e || '');
-  for (const codigo of ['sem_acesso', 'nao_encontrada', 'conflito', 'limite']) {
+  for (const codigo of [
+    'sem_acesso',
+    'nao_encontrada',
+    'conflito',
+    'limite',
+    'nota_grande',
+    'caixa_fixa',
+    'ultima_caixa',
+    'limite_caixas',
+    'nome_repetido',
+  ]) {
     if (new RegExp(`(^|[^a-z_])${codigo}([^a-z_]|$)`).test(texto)) {
       return erro(codigo);
     }
@@ -981,6 +1260,7 @@ export class RepositorioSupabase {
     this.arm = armazenamento || criarArmazenamento();
     this.tarefas = lerJSON(this.arm, CHAVE_CACHE, []);
     if (!Array.isArray(this.tarefas)) this.tarefas = [];
+    this.listaCaixas = normalizarCaixas(lerJSON(this.arm, CHAVE_CAIXAS, null));
     this.fila = lerJSON(this.arm, CHAVE_FILA, []);
     if (!Array.isArray(this.fila)) this.fila = [];
     this.ouvintes = new Set();
@@ -1126,8 +1406,13 @@ export class RepositorioSupabase {
     const tarefas = lerJSON(this.arm, CHAVE_CACHE, null);
     if (!Array.isArray(tarefas)) return null;
     this.tarefas = tarefas;
+    this.listaCaixas = normalizarCaixas(lerJSON(this.arm, CHAVE_CAIXAS, null));
     this.membro = membro;
-    return { tarefas: clone(tarefas), membro };
+    return {
+      tarefas: clone(tarefas),
+      membro,
+      caixas: clone(this.listaCaixas),
+    };
   }
 
   _ajustarDono(sessao) {
@@ -1139,8 +1424,10 @@ export class RepositorioSupabase {
       this.tarefas = [];
       this.fila = [];
       this.membro = null;
+      this.listaCaixas = caixasPadrao();
       this._salvarCache();
       this._salvarFila();
+      this._salvarCaixas();
       this.arm.removeItem(CHAVE_NOTAS);
       this.arm.removeItem(CHAVE_MEMBRO);
     }
@@ -1317,8 +1604,20 @@ export class RepositorioSupabase {
     gravarJSON(this.arm, CHAVE_FILA, this.fila);
   }
 
+  _salvarCaixas() {
+    gravarJSON(this.arm, CHAVE_CAIXAS, this.listaCaixas);
+  }
+
+  _areas() {
+    return areasDe(this.listaCaixas);
+  }
+
   _emitir(tipo) {
-    const pacote = { tipo, tarefas: clone(this.tarefas) };
+    const pacote = {
+      tipo,
+      tarefas: clone(this.tarefas),
+      caixas: clone(this.listaCaixas),
+    };
     for (const cb of this.ouvintes) {
       try {
         cb(pacote);
@@ -1395,7 +1694,13 @@ export class RepositorioSupabase {
   }
 
   _estadoOtimista() {
-    return { tarefas: clone(this.tarefas), eventos: [], seq: 0 };
+    return {
+      tarefas: clone(this.tarefas),
+      eventos: [],
+      seq: 0,
+      caixas: clone(this.listaCaixas),
+      notas: this._lerNotasCache(),
+    };
   }
 
   _aplicarOtimista(operacao) {
@@ -1416,9 +1721,16 @@ export class RepositorioSupabase {
   // -------------------------------------------------------------- escritas
 
   async criar(campos) {
-    const validos = validarCampos(campos, { criacao: true });
+    const validos = validarCampos(campos, {
+      criacao: true,
+      areas: this._areas(),
+    });
     const tarefa = this._aplicarOtimista((estado) =>
-      criarNaLista(estado, validos, { dono: this._dono(), origem: 'eu' }),
+      criarNaLista(estado, validos, {
+        dono: this._dono(),
+        origem: 'eu',
+        areas: this._areas(),
+      }),
     );
     this._enfileirar({
       tipo: 'criar',
@@ -1430,9 +1742,12 @@ export class RepositorioSupabase {
   }
 
   async atualizar(id, versao, campos) {
-    const validos = validarCampos(campos, { criacao: false });
+    const validos = validarCampos(campos, {
+      criacao: false,
+      areas: this._areas(),
+    });
     const tarefa = this._aplicarOtimista((estado) =>
-      atualizarNaLista(estado, id, versao, validos, 'eu'),
+      atualizarNaLista(estado, id, versao, validos, 'eu', this._areas()),
     );
     this._enfileirar({ tipo: 'atualizar', id, versao, campos: validos });
     return tarefa;
@@ -1724,7 +2039,7 @@ export class RepositorioSupabase {
   }
 
   async salvarNota(area, texto) {
-    validarNota(area, texto);
+    validarNota(area, texto, this._areas());
     const cache = this._lerNotasCache();
     const atual = cache[area];
     cache[area] = {
@@ -1737,6 +2052,89 @@ export class RepositorioSupabase {
     this.fila = this.fila.filter((i) => !(i.tipo === 'nota' && i.area === area));
     this._enfileirar({ tipo: 'nota', area, texto });
     return clone(cache[area]);
+  }
+
+  // ------------------------------------------------------------------ caixas
+
+  async caixas() {
+    if (!this.sessao || this.fila.length) return clone(this.listaCaixas);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return clone(this.listaCaixas);
+    }
+    try {
+      await this._recarregarCaixas();
+    } catch (e) {
+      // Offline ou banco antigo sem tf_caixas: mantém o cache e deixa o app
+      // abrir; as edições de caixa mostram o erro quando forem tentadas.
+      if (e && e.codigo === 'sem_acesso') throw e;
+    }
+    return clone(this.listaCaixas);
+  }
+
+  async _recarregarCaixas() {
+    if (!this.sessao) return clone(this.listaCaixas);
+    const lista = normalizarCaixas(
+      await this._rpc('tf_caixas', {}, { limite: LIMITE_RPC }),
+    );
+    this.listaCaixas = lista;
+    this._salvarCaixas();
+    return clone(lista);
+  }
+
+  // Caixas exigem internet: nada de fila nem escrita otimista.
+  _exigirCaixasOnline() {
+    if (!this.sessao) throw erro('sem_acesso');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const e = erro('rede', 'Conecte-se para mudar as caixas');
+      e.rede = true;
+      e.caixas = true;
+      throw e;
+    }
+  }
+
+  async criarCaixa(nome, tinta) {
+    this._exigirCaixasOnline();
+    const caixa = await this._rpc('tf_caixa_criar', {
+      p_nome: nome,
+      p_tinta: tinta,
+    });
+    await this._recarregarCaixas();
+    this._emitir('caixas');
+    return caixa;
+  }
+
+  async editarCaixa(chave, campos = {}) {
+    this._exigirCaixasOnline();
+    const caixa = await this._rpc('tf_caixa_editar', {
+      p_chave: chave,
+      p_nome: campos.nome == null ? null : campos.nome,
+      p_tinta: campos.tinta == null ? null : campos.tinta,
+    });
+    await this._recarregarCaixas();
+    this._emitir('caixas');
+    return caixa;
+  }
+
+  async ordenarCaixas(chaves) {
+    this._exigirCaixasOnline();
+    const lista = await this._rpc('tf_caixas_ordenar', {
+      p_chaves: Array.isArray(chaves) ? chaves : [],
+    });
+    this.listaCaixas = normalizarCaixas(lista);
+    this._salvarCaixas();
+    this._emitir('caixas');
+    return clone(this.listaCaixas);
+  }
+
+  async apagarCaixa(chave, destino) {
+    this._exigirCaixasOnline();
+    const resultado = await this._rpc('tf_caixa_apagar', {
+      p_chave: chave,
+      p_destino: destino,
+    });
+    await this._recarregarCaixas();
+    this._emitir('caixas');
+    return resultado;
   }
 
   async eventos(id) {
@@ -1789,6 +2187,20 @@ export class RepositorioSupabase {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'subtarefas' },
       () => this._agendarSincronizacao(),
+    );
+    canal = canal.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'caixas',
+        ...(uid ? { filter: `dono=eq.${uid}` } : {}),
+      },
+      () => {
+        this._recarregarCaixas()
+          .then(() => this._emitir('caixas'))
+          .catch(() => {});
+      },
     );
     this.canal = canal.subscribe();
   }
