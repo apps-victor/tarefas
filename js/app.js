@@ -7,6 +7,7 @@ import {
   ROTULOS_FAIXA,
   camposParaFaixa,
   dataPorExtenso,
+  ehExterna,
   faixaDe,
   hojeSP,
   organizarCaixa,
@@ -629,6 +630,12 @@ function abrirMenu(tarefa) {
   }
   el.menu.appendChild(caixas);
 
+  // O círculo tracejado abre o link; concluir um item de fora é por aqui.
+  if (ehExterna(tarefa) && tarefa.estado !== 'feita') {
+    el.menu.appendChild(
+      itemMenu('Marcar como feito', () => concluirTarefa(atual(tarefa) || tarefa), 'menu-destaque'),
+    );
+  }
   el.menu.appendChild(itemMenu('Abrir detalhes', () => detalhes.abrir(atual(tarefa) || tarefa)));
   el.menu.appendChild(itemMenu('Arquivar', () => arquivarTarefa(tarefa), 'menu-discreto'));
 

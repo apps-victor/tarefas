@@ -1346,6 +1346,11 @@ body.arrastando {
   color: var(--lapis);
 }
 
+.menu-destaque {
+  color: var(--tinta);
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------ painéis (detalhes e ajustes) */
 
 .painel {
